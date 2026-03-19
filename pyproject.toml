@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "jmd"
+version = "0.3.0"
+description = "JMD (JSON Markdown) — structured data format for LLM-driven infrastructure"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Andreas Ostermeyer", email = "andreas@ostermeyer.de" }]
+requires-python = ">=3.10"
+keywords = ["jmd", "llm", "structured-data", "json", "markdown", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup",
+]
+
+[project.urls]
+Homepage = "https://github.com/ostermeyer/jmd-spec"
+Repository = "https://github.com/ostermeyer/jmd-impl"
+
+[project.scripts]
+jmd = "jmd._cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jmd*"]
+
+[tool.setuptools.package-data]
+jmd = ["py.typed", "*.c"]
