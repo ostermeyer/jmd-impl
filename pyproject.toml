@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jmd"
+name = "jmd-format"
 version = "0.3.0"
 description = "JMD (JSON Markdown) — structured data format for LLM-driven infrastructure"
 readme = "README.md"

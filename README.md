@@ -1,11 +1,11 @@
-# jmd — Python Reference Implementation
+# jmd-format — Python Reference Implementation
 
 Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.3). Includes a C-accelerated parser and serializer.
 
 ## Installation
 
 ```bash
-pip install jmd
+pip install jmd-format
 ```
 
 The C extensions are built automatically during installation if a C compiler is available. If not, the pure-Python fallback is used transparently.
