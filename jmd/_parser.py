@@ -8,6 +8,12 @@ from typing import Any
 from ._tokenizer import Line, tokenize, is_thematic_break
 from ._scalars import parse_key, parse_scalar
 
+try:
+    from jmd._cparser import parse as _c_parse
+    _USE_C = True
+except ImportError:
+    _USE_C = False
+
 
 # Pattern to detect key: value on an item line or indented continuation
 _KV_RE = re.compile(r'^(?:[a-zA-Z0-9_\-]+|"(?:[^"\\]|\\.)*"): ')
@@ -79,6 +85,11 @@ class JMDParser:
             raise ValueError("No root heading found")
 
         first = self._lines[self._pos]
+
+        if _USE_C:
+            # Strip frontmatter: pass only from the first heading line onwards
+            body = "\n".join(source.splitlines()[first.number - 1:])
+            return _c_parse(body)
 
         # Root array: # [] or # Label[]
         if first.heading_depth == 1 and (first.content == "[]" or first.content.endswith("[]")):

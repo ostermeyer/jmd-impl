@@ -31,6 +31,8 @@ class SchemaField:
     optional: bool = False
     readonly: bool = False
     enum_values: list[Any] = dc_field(default_factory=lambda: cast(list[Any], []))
+    format_hint: str | None = None
+    default: Any = None
 
 
 @dataclass
@@ -50,6 +52,7 @@ class SchemaArray:
     item_type: str
     item_fields: list[Any] = dc_field(default_factory=lambda: cast(list[Any], []))
     optional: bool = False
+    item_ref: str | None = None  # set when item_type == "ref" ([]-> Label)
 
 
 @dataclass
@@ -81,8 +84,10 @@ class JMDSchema:
                     "required": self._required(f.fields),
                 }
             elif isinstance(f, SchemaArray):
-                if f.item_type == "object" and f.item_fields:
-                    items: dict[str, Any] = {
+                if f.item_type == "ref" and f.item_ref:
+                    items: dict[str, Any] = {"$ref": f.item_ref}
+                elif f.item_type == "object" and f.item_fields:
+                    items = {
                         "type": "object",
                         "properties": self._fields_to_props(f.item_fields),
                         "required": self._required(f.item_fields),
@@ -96,6 +101,10 @@ class JMDSchema:
         s: dict[str, Any] = {"type": f.base_type}
         if f.enum_values:
             s["enum"] = f.enum_values
+        if f.format_hint:
+            s["format"] = f.format_hint
+        if f.default is not None:
+            s["default"] = f.default
         return s
 
     def _required(self, fields: list[Any]) -> list[str]:
@@ -105,63 +114,91 @@ class JMDSchema:
         ]
 
 
-def _parse_type_expr(raw: str) -> tuple[str, bool, bool, list[Any], str | None]:
-    """Parse a JMD type expression into (base_type, optional, readonly, enum_values, ref).
+_FORMAT_HINTS = {"email", "date", "datetime", "uri"}
+_MODIFIERS = {"optional", "readonly"}
+
+
+def _parse_type_expr(
+    raw: str,
+) -> tuple[str, bool, bool, list[Any], str | None, str | None, Any]:
+    """Parse a JMD type expression.
 
     Returns:
-        A tuple of (base_type, optional, readonly, enum_values, ref) where:
-        - base_type: the declared type string (e.g. ``'string'``, ``'integer'``)
-        - optional: ``True`` if the ``optional`` modifier is present
-        - readonly: ``True`` if the ``readonly`` modifier is present
-        - enum_values: list of allowed enum values (empty if not an enum)
-        - ref: referenced label for ``-> Label`` reference types, else ``None``
+        (base_type, optional, readonly, enum_values, ref, format_hint, default)
     """
     raw = raw.strip()
+
+    # Array reference type: "[]-> Label [optional] [readonly]"
+    arr_ref_m = re.match(r"^\[\]->\s+(\w+)(.*)", raw)
+    if arr_ref_m:
+        ref_label = arr_ref_m.group(1)
+        rest = arr_ref_m.group(2).strip().split()
+        return "ref[]", "optional" in rest, "readonly" in rest, [], ref_label, None, None
 
     # Reference type: "-> Label [optional] [readonly]"
     ref_m = re.match(r"^->\s+(\w+)(.*)", raw)
     if ref_m:
         ref_label = ref_m.group(1)
-        rest = ref_m.group(2).strip()
-        optional = "optional" in rest.split()
-        readonly = "readonly" in rest.split()
-        return "ref", optional, readonly, [], ref_label
+        rest = ref_m.group(2).strip().split()
+        return "ref", "optional" in rest, "readonly" in rest, [], ref_label, None, None
 
-    # Extract keyword modifiers before parsing type
-    parts = raw.split()
-    optional = "optional" in parts
-    readonly = "readonly" in parts
-    # Remove modifiers to get the clean type expression
-    type_parts = [p for p in parts if p not in ("optional", "readonly")]
-    raw = " ".join(type_parts)
+    # Extract default value ("= value") before splitting on spaces
+    default: Any = None
+    default_m = re.search(r"\s*=\s*(\S+)", raw)
+    if default_m:
+        default = parse_scalar(default_m.group(1))
+        raw = raw[:default_m.start()].strip()
+
+    # Split remaining into tokens and separate modifiers
+    tokens = raw.split()
+    optional = "optional" in tokens
+    readonly = "readonly" in tokens
+    type_tokens = [t for t in tokens if t not in _MODIFIERS]
 
     # Legacy ?-suffix optional notation
-    if raw.endswith("?") and not raw.endswith("(?)"):
+    if type_tokens and type_tokens[-1].endswith("?"):
         optional = True
-        raw = raw[:-1]
+        type_tokens[-1] = type_tokens[-1][:-1]
+        if not type_tokens[-1]:
+            type_tokens.pop()
 
-    enum_values: list[Any] = []
-    m = re.match(r"^(\w+)\(([^)]+)\)$", raw)
+    # Legacy parenthesized enum: type(a|b|c)
+    joined = " ".join(type_tokens)
+    m = re.match(r"^(\w+)\(([^)]+)\)$", joined)
     if m:
         base_type = m.group(1)
-        enum_values = [
-            parse_scalar(v.strip()) for v in m.group(2).split("|")
-        ]
+        enum_values: list[Any] = [parse_scalar(v.strip()) for v in m.group(2).split("|")]
+        return base_type, optional, readonly, enum_values, None, None, default
+
+    # Bare pipe enum: pending|active|shipped
+    if type_tokens and "|" in type_tokens[0]:
+        enum_values = [parse_scalar(v.strip()) for v in type_tokens[0].split("|")]
+        return "string", optional, readonly, enum_values, None, None, default
+
+    # Base type with optional format hint: "string email", "string datetime"
+    format_hint: str | None = None
+    if len(type_tokens) >= 2 and type_tokens[1] in _FORMAT_HINTS:
+        base_type = type_tokens[0]
+        format_hint = type_tokens[1]
     else:
-        base_type = raw
+        base_type = type_tokens[0] if type_tokens else "string"
 
-    return base_type, optional, readonly, enum_values, None
+    return base_type, optional, readonly, [], None, format_hint, default
 
 
-def _make_schema_field(key: str, type_expr: str) -> "SchemaField | SchemaRef":
+def _make_schema_field(key: str, type_expr: str) -> "SchemaField | SchemaRef | SchemaArray":
     """Parse *type_expr* and return the appropriate schema field object."""
-    base_type, optional, readonly, enum_values, ref = _parse_type_expr(type_expr)
+    base_type, optional, readonly, enum_values, ref, format_hint, default = _parse_type_expr(type_expr)
+    if base_type == "ref[]":
+        return SchemaArray(key=key, item_type="ref", item_ref=ref, optional=optional)
     if ref is not None:
         return SchemaRef(key=key, ref=ref, optional=optional, readonly=readonly)
     return SchemaField(
         key=key, base_type=base_type,
         optional=optional, readonly=readonly,
         enum_values=enum_values,
+        format_hint=format_hint,
+        default=default,
     )
 
 
@@ -176,18 +213,37 @@ class JMDSchemaParser:
         """Parse a JMD schema document."""
         self._lines = tokenize(source)
         self._pos = 0
+        self.frontmatter: dict[str, Any] = {}
 
         if not self._lines:
             raise ValueError("Empty schema document")
 
-        first = self._lines[0]
+        # Skip frontmatter (key: value lines before the first heading)
+        while self._pos < len(self._lines):
+            line = self._lines[self._pos]
+            if line.heading_depth > 0:
+                break
+            if line.heading_depth == -1:
+                self._pos += 1
+                continue
+            if ": " in line.content:
+                key_part, _, val_part = line.content.partition(": ")
+                self.frontmatter[parse_key(key_part)] = parse_scalar(val_part)
+            elif line.content and not line.content.startswith(("- ", ">")):
+                self.frontmatter[parse_key(line.content)] = True
+            self._pos += 1
+
+        if self._pos >= len(self._lines):
+            raise ValueError("No root heading found in schema document")
+
+        first = self._lines[self._pos]
         if first.heading_depth != 1 or not first.content.startswith("! "):
             raise ValueError(
                 "Schema document must start with '#! <label>'"
             )
 
         label = first.content[2:].strip()
-        self._pos = 1
+        self._pos += 1
         fields = self._parse_schema_body(depth=1)
         return JMDSchema(label=label, fields=fields)
 
@@ -222,7 +278,7 @@ class JMDSchemaParser:
                 if "[]: " in content:
                     key_part, _, type_part = content.partition("[]: ")
                     key = parse_key(key_part)
-                    base_type, optional, _ro, _ev, _ref = _parse_type_expr(type_part)
+                    base_type, optional, _ro, _ev, _ref, _fh, _dv = _parse_type_expr(type_part)
                     if base_type == "object":
                         item_fields = self._parse_schema_dash_item()
                         fields.append(SchemaArray(
@@ -265,7 +321,7 @@ class JMDSchemaParser:
                 if "[]: " in line.content:
                     key_part, _, type_part = line.content.partition("[]: ")
                     key = parse_key(key_part)
-                    base_type, optional, _ro, _ev, _ref = _parse_type_expr(type_part)
+                    base_type, optional, _ro, _ev, _ref, _fh, _dv = _parse_type_expr(type_part)
                     fields.append(SchemaArray(
                         key=key, item_type=base_type,
                         optional=optional,

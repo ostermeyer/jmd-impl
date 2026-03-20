@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, cast
 
 from ._tokenizer import tokenize, Line
 from ._scalars import parse_key, parse_scalar
 from ._parser import _is_object_item_content, _is_indent_field
+
+# Regex metacharacters that signal a regex pattern (excluding | which is handled separately)
+_REGEX_META = re.compile(r'[.*+?^$\[\]()\\\-]')
 
 
 @dataclass
@@ -22,6 +26,10 @@ class Condition:
             return "PROJECT"
         if self.op == "?:":
             return "PROJECT_ALL"
+        if self.op == "!":
+            return f"!{self.values[0]!r}"
+        if self.op == "regex":
+            return f"~/{self.values[0]}/"
         if len(self.values) == 1:
             return f"{self.op}{self.values[0]!r}"
         return f'{self.op}({"|".join(repr(v) for v in self.values)})'
@@ -73,11 +81,24 @@ def _parse_condition(raw: str) -> Condition:
     if raw == "?: ?":
         return Condition(op="?:", values=[])
 
-    for op in (">=", "<=", ">", "<", "!", "~"):
+    # Negation: wraps the inner condition recursively
+    if raw.startswith("!"):
+        inner = _parse_condition(raw[1:])
+        return Condition(op="!", values=[inner])
+
+    for op in (">=", "<=", ">", "<"):
         if raw.startswith(op):
-            rest = raw[len(op):]
-            parts = [parse_scalar(p.strip()) for p in rest.split("|")]
-            return Condition(op=op, values=parts)
+            rest = raw[len(op):].strip()
+            return Condition(op=op, values=[parse_scalar(rest)])
+
+    # Contains (~) — case-insensitive substring match
+    if raw.startswith("~"):
+        return Condition(op="~", values=[parse_scalar(raw[1:].strip())])
+
+    # Regex pattern: contains metacharacters (other than |) → fullmatch regex
+    # Pure alternation (only | as metachar) → | op for simple set membership
+    if _REGEX_META.search(raw) or ("|" in raw and _REGEX_META.search(raw.replace("|", ""))):
+        return Condition(op="regex", values=[raw])
 
     parts = [parse_scalar(p.strip()) for p in raw.split("|")]
     op = "=" if len(parts) == 1 else "|"
@@ -95,11 +116,30 @@ class JMDQueryParser:
         """Parse a JMD query document."""
         self._lines = tokenize(source)
         self._pos = 0
+        self.frontmatter: dict[str, Any] = {}
 
         if not self._lines:
             raise ValueError("Empty query document")
 
-        first = self._lines[0]
+        # Skip frontmatter (key: value lines before the first heading)
+        while self._pos < len(self._lines):
+            line = self._lines[self._pos]
+            if line.heading_depth > 0:
+                break
+            if line.heading_depth == -1:
+                self._pos += 1
+                continue
+            if ": " in line.content:
+                key_part, _, val_part = line.content.partition(": ")
+                self.frontmatter[parse_key(key_part)] = parse_scalar(val_part)
+            elif line.content and not line.content.startswith(("- ", ">")):
+                self.frontmatter[parse_key(line.content)] = True
+            self._pos += 1
+
+        if self._pos >= len(self._lines):
+            raise ValueError("No root heading found in query document")
+
+        first = self._lines[self._pos]
         if first.heading_depth != 1 or not first.content.startswith("? "):
             raise ValueError(
                 f"Line {first.number}: query document must start with "
@@ -107,7 +147,7 @@ class JMDQueryParser:
             )
 
         label = first.content[2:].strip()
-        self._pos = 1
+        self._pos += 1
         fields = self._parse_query_body(depth=1)
         return JMDQuery(label=label, fields=fields)
 
@@ -301,12 +341,17 @@ class JMDQueryExecutor:
 
     def _eval(self, val: Any, cond: Condition) -> bool:
         op, values = cond.op, cond.values
+        if op == "!":
+            return not self._eval(val, values[0])
         if op in ("=", "in"):
             return val == values[0]
-        if op == "!=":
-            return val != values[0]
         if op == "|":
             return val in values
+        if op == "regex":
+            try:
+                return bool(re.fullmatch(str(values[0]), str(val)))
+            except re.error:
+                return str(values[0]) == str(val)
         if op == "~":
             return str(values[0]).lower() in str(val).lower()
         if val is None:
