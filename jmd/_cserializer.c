@@ -245,6 +245,30 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
         return outbuf_append(ob, s, slen);
     }
 
+    if (PyBytes_Check(value) || PyByteArray_Check(value)) {
+        /* binary → sha256:<hex> via Python hashlib */
+        PyObject *hashlib = PyImport_ImportModule("hashlib");
+        if (!hashlib) return 0;
+        PyObject *bytes_obj = PyBytes_Check(value)
+            ? (Py_INCREF(value), value)
+            : PyBytes_FromStringAndSize(PyByteArray_AS_STRING(value),
+                                        PyByteArray_GET_SIZE(value));
+        if (!bytes_obj) { Py_DECREF(hashlib); return 0; }
+        PyObject *digest = PyObject_CallMethod(hashlib, "sha256", "O", bytes_obj);
+        Py_DECREF(hashlib);
+        Py_DECREF(bytes_obj);
+        if (!digest) return 0;
+        PyObject *hexdig = PyObject_CallMethod(digest, "hexdigest", NULL);
+        Py_DECREF(digest);
+        if (!hexdig) return 0;
+        const char *hstr = PyUnicode_AsUTF8(hexdig);
+        if (!hstr) { Py_DECREF(hexdig); return 0; }
+        int ok = outbuf_append(ob, "sha256:", 7);
+        if (ok) ok = outbuf_append(ob, hstr, (Py_ssize_t)strlen(hstr));
+        Py_DECREF(hexdig);
+        return ok;
+    }
+
     /* Fallback: str(value) */
     PyObject *s = PyObject_Str(value);
     if (!s) return 0;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any
@@ -121,6 +122,8 @@ def serialize_scalar(value: Any) -> str:
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return str(value)
+    if isinstance(value, (bytes, bytearray)):
+        return "sha256:" + hashlib.sha256(value).hexdigest()
     s = str(value)
     if _needs_quote(s) or s.startswith('"') or "\n" in s or "\t" in s:
         return json.dumps(s, ensure_ascii=False)
