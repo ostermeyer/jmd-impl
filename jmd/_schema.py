@@ -98,6 +98,8 @@ class JMDSchema:
         return props
 
     def _field_schema(self, f: SchemaField) -> dict[str, Any]:
+        if f.base_type == "binary":
+            return {"type": "string", "contentEncoding": "sha256"}
         s: dict[str, Any] = {"type": f.base_type}
         if f.enum_values:
             s["enum"] = f.enum_values
