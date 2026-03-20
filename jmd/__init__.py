@@ -115,17 +115,6 @@ def serialize(data: Any, label: str = "Document") -> str:
     return JMDSerializer().serialize(data, label=label)
 
 
-# Keep cparse / cserialize as explicit aliases for backwards compatibility
-def cparse(source: str) -> Any:
-    """Alias for :func:`parse`. Kept for backwards compatibility."""
-    return parse(source)
-
-
-def cserialize(data: Any, label: str = "Document") -> str:
-    """Alias for :func:`serialize`. Kept for backwards compatibility."""
-    return serialize(data, label)
-
-
 # ---------------------------------------------------------------------------
 # Document mode detection
 # ---------------------------------------------------------------------------
@@ -176,8 +165,6 @@ __all__ = [
     # Top-level API (C-accelerated by default)
     "parse",
     "serialize",
-    "cparse",       # backwards-compat alias
-    "cserialize",   # backwards-compat alias
     # Mode detection
     "jmd_mode",
     # HTML

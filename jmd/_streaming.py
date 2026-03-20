@@ -275,24 +275,18 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                     elif stype == "item":
                         yield StreamEvent("ITEM_END")
 
-        # Blockquote line (standalone, after key:)
+        # Orphan blockquote line: a '>' not preceded by a key: handler.
+        # This should not occur in valid JMD documents. Skip all consecutive
+        # blockquote lines without emitting any event — intentional no-op.
         elif line.raw_text.strip().startswith(">"):
-            # Collect blockquote lines
-            bq_parts: list[str] = []
             # Back up — we already consumed this line via li += 1
             li -= 1
             while li < len(lines):
                 raw = lines[li].raw_text.strip()
-                if raw == ">":
-                    bq_parts.append("")
-                    li += 1
-                elif raw.startswith("> "):
-                    bq_parts.append(raw[2:])
+                if raw == ">" or raw.startswith("> "):
                     li += 1
                 else:
                     break
-            # Blockquote was already consumed by key: handler above in most cases.
-            # This handles orphan blockquotes (shouldn't normally occur).
 
         # Bare field: key: value or key: (with blockquote)
         elif ": " in line.content:

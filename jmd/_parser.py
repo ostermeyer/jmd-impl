@@ -25,7 +25,7 @@ def _is_indent_field(raw_text: str) -> tuple[bool, str, str] | None:
     Returns (key_part, val_part) if it matches, None otherwise.
     """
     # Fast reject: must start with 2+ spaces
-    if raw_text[0] != ' ' or raw_text[1] != ' ':
+    if len(raw_text) < 2 or raw_text[0] != ' ' or raw_text[1] != ' ':
         return None
     stripped = raw_text.lstrip(' ')
     if _kv_match(stripped):
