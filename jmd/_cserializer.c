@@ -168,7 +168,7 @@ ser_write_quoted(OutBuf *ob, const char *s, Py_ssize_t len)
     if (!pystr) return 0;
     PyObject *json_mod = PyImport_ImportModule("json");
     if (!json_mod) { Py_DECREF(pystr); return 0; }
-    PyObject *result = PyObject_CallMethod(json_mod, "dumps", "Oi", pystr, 0);
+    PyObject *result = PyObject_CallMethod(json_mod, "dumps", "O", pystr);
     Py_DECREF(json_mod);
     Py_DECREF(pystr);
     if (!result) return 0;
