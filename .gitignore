@@ -7,3 +7,7 @@ dist/
 build/
 .eggs/
 wheelhouse/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.vscode/
