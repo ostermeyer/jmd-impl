@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
-from ._tokenizer import tokenize, is_thematic_break
+from ._parser import _is_indent_field, _is_object_item_content
 from ._scalars import parse_key, parse_scalar
-from ._parser import _is_object_item_content, _is_indent_field
+from ._tokenizer import is_thematic_break, tokenize
 
 
 @dataclass
@@ -17,7 +17,7 @@ class StreamEvent:
 
     type: str   # DOCUMENT_START | DOCUMENT_END | FIELD | OBJECT_START |
     # OBJECT_END | ARRAY_START | ARRAY_END | ITEM_START | ITEM_END | ITEM_VALUE
-    key: Optional[str] = None
+    key: str | None = None
     value: Any = None
 
     def __repr__(self) -> str:
@@ -48,7 +48,9 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
 
     scope_stack: list[tuple[str, str | None, int]] = []
 
-    def close_scopes_to(target_depth: int) -> Generator[StreamEvent, None, None]:
+    def close_scopes_to(
+        target_depth: int,
+    ) -> Generator[StreamEvent, None, None]:
         """Close scopes deeper than target_depth."""
         while scope_stack:
             stype, skey, sdepth = scope_stack[-1]
@@ -106,12 +108,13 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                     if scope_stack and scope_stack[-1][0] in ("array", "item"):
                         continue
                 # Blockquote after blank line — keep going
-                if nxt.heading_depth == 0 and nxt.raw_text.strip().startswith(">"):
+                if (nxt.heading_depth == 0
+                        and nxt.raw_text.strip().startswith(">")):
                     continue
             if scope_stack and scope_stack[-1][0] == "item":
                 scope_stack.pop()
                 yield StreamEvent("ITEM_END")
-            closed: list[tuple[str, Optional[str]]] = []
+            closed: list[tuple[str, str | None]] = []
             while scope_stack and scope_stack[-1][0] != "doc":
                 stype, skey, _ = scope_stack.pop()
                 closed.append((stype, skey))

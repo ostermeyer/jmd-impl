@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any, cast
 
-from ._tokenizer import tokenize, Line
+from ._parser import _is_indent_field, _is_object_item_content
 from ._scalars import parse_key, parse_scalar, quote_key
-from ._parser import _is_object_item_content, _is_indent_field
+from ._tokenizer import Line, tokenize
 
 
 @dataclass
@@ -30,7 +31,9 @@ class SchemaField:
     base_type: str
     optional: bool = False
     readonly: bool = False
-    enum_values: list[Any] = dc_field(default_factory=lambda: cast(list[Any], []))
+    enum_values: list[Any] = dc_field(
+        default_factory=list
+    )
     format_hint: str | None = None
     default: Any = None
 
@@ -50,7 +53,9 @@ class SchemaArray:
 
     key: str
     item_type: str
-    item_fields: list[Any] = dc_field(default_factory=lambda: cast(list[Any], []))
+    item_fields: list[Any] = dc_field(
+        default_factory=list
+    )
     optional: bool = False
     item_ref: str | None = None  # set when item_type == "ref" ([]-> Label)
 
@@ -135,14 +140,20 @@ def _parse_type_expr(
     if arr_ref_m:
         ref_label = arr_ref_m.group(1)
         rest = arr_ref_m.group(2).strip().split()
-        return "ref[]", "optional" in rest, "readonly" in rest, [], ref_label, None, None
+        return (
+            "ref[]", "optional" in rest, "readonly" in rest,
+            [], ref_label, None, None,
+        )
 
     # Reference type: "-> Label [optional] [readonly]"
     ref_m = re.match(r"^->\s+(\w+)(.*)", raw)
     if ref_m:
         ref_label = ref_m.group(1)
         rest = ref_m.group(2).strip().split()
-        return "ref", "optional" in rest, "readonly" in rest, [], ref_label, None, None
+        return (
+            "ref", "optional" in rest, "readonly" in rest,
+            [], ref_label, None, None,
+        )
 
     # Extract default value ("= value") before splitting on spaces
     default: Any = None
@@ -169,12 +180,16 @@ def _parse_type_expr(
     m = re.match(r"^(\w+)\(([^)]+)\)$", joined)
     if m:
         base_type = m.group(1)
-        enum_values: list[Any] = [parse_scalar(v.strip()) for v in m.group(2).split("|")]
+        enum_values: list[Any] = [
+            parse_scalar(v.strip()) for v in m.group(2).split("|")
+        ]
         return base_type, optional, readonly, enum_values, None, None, default
 
     # Bare pipe enum: pending|active|shipped
     if type_tokens and "|" in type_tokens[0]:
-        enum_values = [parse_scalar(v.strip()) for v in type_tokens[0].split("|")]
+        enum_values = [
+            parse_scalar(v.strip()) for v in type_tokens[0].split("|")
+        ]
         return "string", optional, readonly, enum_values, None, None, default
 
     # Base type with optional format hint: "string email", "string datetime"
@@ -188,13 +203,20 @@ def _parse_type_expr(
     return base_type, optional, readonly, [], None, format_hint, default
 
 
-def _make_schema_field(key: str, type_expr: str) -> "SchemaField | SchemaRef | SchemaArray":
+def _make_schema_field(
+    key: str, type_expr: str
+) -> SchemaField | SchemaRef | SchemaArray:
     """Parse *type_expr* and return the appropriate schema field object."""
-    base_type, optional, readonly, enum_values, ref, format_hint, default = _parse_type_expr(type_expr)
+    (base_type, optional, readonly,
+     enum_values, ref, format_hint, default) = _parse_type_expr(type_expr)
     if base_type == "ref[]":
-        return SchemaArray(key=key, item_type="ref", item_ref=ref, optional=optional)
+        return SchemaArray(
+            key=key, item_type="ref", item_ref=ref, optional=optional
+        )
     if ref is not None:
-        return SchemaRef(key=key, ref=ref, optional=optional, readonly=readonly)
+        return SchemaRef(
+            key=key, ref=ref, optional=optional, readonly=readonly
+        )
     return SchemaField(
         key=key, base_type=base_type,
         optional=optional, readonly=readonly,
@@ -280,7 +302,8 @@ class JMDSchemaParser:
                 if "[]: " in content:
                     key_part, _, type_part = content.partition("[]: ")
                     key = parse_key(key_part)
-                    base_type, optional, _ro, _ev, _ref, _fh, _dv = _parse_type_expr(type_part)
+                    (base_type, optional, _ro,
+                     _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
                     if base_type == "object":
                         item_fields = self._parse_schema_dash_item()
                         fields.append(SchemaArray(
@@ -296,7 +319,9 @@ class JMDSchemaParser:
                 # Scalar or ref: key: type
                 elif ": " in content:
                     key_part, _, type_part = content.partition(": ")
-                    fields.append(_make_schema_field(parse_key(key_part), type_part))
+                    fields.append(
+                        _make_schema_field(parse_key(key_part), type_part)
+                    )
 
                 # Object: key
                 else:
@@ -323,14 +348,17 @@ class JMDSchemaParser:
                 if "[]: " in line.content:
                     key_part, _, type_part = line.content.partition("[]: ")
                     key = parse_key(key_part)
-                    base_type, optional, _ro, _ev, _ref, _fh, _dv = _parse_type_expr(type_part)
+                    (base_type, optional, _ro,
+                     _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
                     fields.append(SchemaArray(
                         key=key, item_type=base_type,
                         optional=optional,
                     ))
                 else:
                     key_part, _, type_part = line.content.partition(": ")
-                    fields.append(_make_schema_field(parse_key(key_part), type_part))
+                    fields.append(
+                        _make_schema_field(parse_key(key_part), type_part)
+                    )
                 continue
 
             break
@@ -338,7 +366,7 @@ class JMDSchemaParser:
         return fields
 
     def _parse_schema_dash_item(self) -> list[Any]:
-        """Parse a `- key: type` + indented continuation lines as item template."""
+        """Parse a ``- key: type`` line as an array item template."""
         line = self._cur()
         if line is None:
             return []
@@ -348,7 +376,8 @@ class JMDSchemaParser:
         if line.content == "-":
             # Bare dash: fields follow as bare fields
             self._advance()
-            return self._parse_schema_body_bare(1)  # depth doesn't really matter here
+            # depth doesn't really matter here
+            return self._parse_schema_body_bare(1)
 
         if line.content.startswith("- "):
             content_after = line.content[2:]
@@ -363,7 +392,9 @@ class JMDSchemaParser:
                     indent_result = _is_indent_field(nxt.raw_text)
                     if indent_result is not None:
                         _, ikp, itp = indent_result
-                        item_fields.append(_make_schema_field(parse_key(ikp), itp))
+                        item_fields.append(
+                            _make_schema_field(parse_key(ikp), itp)
+                        )
                         self._advance()
                     else:
                         break
@@ -373,7 +404,7 @@ class JMDSchemaParser:
         return item_fields
 
     def _parse_schema_body_bare(self, depth: int) -> list[Any]:
-        """Parse bare fields (not under headings) — used after bare `-` in schema."""
+        """Parse bare fields not under headings (after bare ``-``)."""
         fields: list[Any] = []
         while True:
             line = self._cur()
@@ -396,7 +427,9 @@ class JMDSchemaParser:
 # JSON Schema <-> JMD Schema conversion
 # ---------------------------------------------------------------------------
 
-def _jmd_type_expr(prop: dict[str, Any], key: str, required_keys: set[str]) -> str:
+def _jmd_type_expr(
+    prop: dict[str, Any], key: str, required_keys: set[str]
+) -> str:
     base = prop.get("type", "string")
     optional = "?" if key not in required_keys else ""
     enum_values = prop.get("enum", [])
@@ -416,7 +449,12 @@ def _json_schema_props_to_jmd(
     """Convert JSON Schema properties to JMD schema lines.
 
     Args:
-        indent: If True, write fields as indented continuation (for array item templates).
+        properties: Mapping of property names to JSON Schema property dicts.
+        required: Set of property names that are required (non-optional).
+        lines: Output list to which JMD schema lines are appended.
+        depth: Current heading depth (1 = top-level, 2 = nested, …).
+        indent: If True, write fields as indented continuation lines
+            (used for array item templates).
     """
     heading = "#" * (depth + 1) + " " if not indent else ""
     prefix = "  " if indent else ""

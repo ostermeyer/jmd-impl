@@ -7,13 +7,12 @@ import json
 import sys
 from typing import Any
 
-from ._parser import JMDParser
-from ._serializer import JMDSerializer
 from ._html import JMDHTMLRenderer
-from ._streaming import jmd_stream
-from ._query import JMDQueryParser, JMDQueryExecutor
+from ._parser import JMDParser
+from ._query import JMDQueryExecutor, JMDQueryParser
 from ._schema import JMDSchemaParser
-
+from ._serializer import JMDSerializer
+from ._streaming import jmd_stream
 
 # ---------------------------------------------------------------------------
 # Public API — top-level convenience functions
@@ -41,7 +40,10 @@ def dict_to_jmd(data: Any, label: str = "Document") -> str:
     return JMDSerializer().serialize(data, label=label)
 
 
-def jmd_query(query_source: str, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def jmd_query(
+    query_source: str,
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Execute a JMD QBE query against a list of dicts."""
     q = JMDQueryParser().parse(query_source)
     return JMDQueryExecutor().execute(q, records)

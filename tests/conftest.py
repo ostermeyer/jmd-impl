@@ -1,6 +1,5 @@
 """Shared fixtures and helpers for the JMD test suite."""
 
-import pytest
 
 
 # ---------------------------------------------------------------------------

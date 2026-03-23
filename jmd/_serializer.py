@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ._scalars import serialize_scalar, quote_key
+from ._scalars import quote_key, serialize_scalar
 
 
 class JMDSerializer:
-    """Serializes Python dicts/lists to JMD v0.3 format.
+    r"""Serializes Python dicts/lists to JMD v0.3 format.
 
     Uses indentation continuation for array object items and
     blockquotes for multiline string values.
 
     Example:
         >>> JMDSerializer().serialize({"id": 42}, label="Order")
-        '# Order\\nid: 42'
+        '# Order\nid: 42'
     """
 
     def serialize(self, data: Any, label: str = "Document") -> str:
@@ -23,10 +23,12 @@ class JMDSerializer:
         lines: list[str] = []
         if isinstance(data, list):
             lines.append("# []")
-            self._write_array_items(cast(list[Any], data), lines, depth=1)
+            self._write_array_items(data, lines, depth=1)
         else:
             lines.append(f"# {label}")
-            self._write_object_fields(cast(dict[str, Any], data), lines, depth=1)
+            self._write_object_fields(
+                cast(dict[str, Any], data), lines, depth=1
+            )
         return "\n".join(lines)
 
     def _heading(self, depth: int) -> str:
@@ -52,12 +54,16 @@ class JMDSerializer:
             if isinstance(value, dict):
                 lines.append("")
                 lines.append(f"{self._heading(depth + 1)}{k}")
-                self._write_object_fields(cast(dict[str, Any], value), lines, depth + 1)
+                self._write_object_fields(
+                    cast(dict[str, Any], value), lines, depth + 1
+                )
                 needs_heading = True
             elif isinstance(value, list):
                 lines.append("")
                 lines.append(f"{self._heading(depth + 1)}{k}[]")
-                self._write_array_items(cast(list[Any], value), lines, depth + 1)
+                self._write_array_items(
+                    value, lines, depth + 1
+                )
                 needs_heading = True
             elif isinstance(value, str) and "\n" in value:
                 # Multiline string → blockquote
@@ -66,7 +72,7 @@ class JMDSerializer:
                 else:
                     lines.append(f"{k}:")
                 self._write_multiline(value, lines)
-                needs_heading = True  # After multiline, next scalar needs heading
+                needs_heading = True  # next scalar needs a heading
             elif needs_heading:
                 lines.append(f"{self._heading(depth + 1)}{k}: "
                              f"{serialize_scalar(value)}")
@@ -174,7 +180,9 @@ class JMDSerializer:
                         deeper_scope_opened = True
                 elif isinstance(item, list):
                     lines.append(f"{self._heading(depth + 1)}[]")
-                    self._write_array_items(cast(list[Any], item), lines, depth + 1)
+                    self._write_array_items(
+                        item, lines, depth + 1
+                    )
                     deeper_scope_opened = True
                 else:
                     lines.append(f"- {serialize_scalar(item)}")

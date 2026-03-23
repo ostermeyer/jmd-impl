@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the JMD C parser and serializer extensions."""
-from setuptools import setup, Extension
+from setuptools import Extension, setup
 
 setup(
     name='jmd_cext',

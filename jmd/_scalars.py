@@ -72,14 +72,15 @@ def parse_key(raw: str) -> str:
     """Parse a key string, stripping quotes if present.
 
     Args:
-        raw: Raw key text, possibly JSON-quoted (should already be stripped by caller).
+        raw: Raw key text, possibly JSON-quoted (should already be stripped
+            by caller).
 
     Returns:
         Unquoted key string.
     """
     if raw[0] == '"':
         if raw[-1] == '"' and len(raw) >= 2:
-            return _json_loads(raw)
+            return str(_json_loads(raw))
     return raw
 
 

@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Any, cast
 
 from ._parser import JMDParser
-from ._tokenizer import tokenize
 from ._scalars import serialize_scalar
-
+from ._tokenizer import tokenize
 
 _HTML_STYLE = """\
 <style>
@@ -106,9 +105,11 @@ class JMDHTMLRenderer:
 
     def _render_value(self, value: Any) -> str:
         if isinstance(value, dict):
-            return f'<div class="jmd-nested">{self._render_object(cast(dict[str, Any], value))}</div>'
+            inner = self._render_object(cast(dict[str, Any], value))
+            return f'<div class="jmd-nested">{inner}</div>'
         if isinstance(value, list):
-            return f'<div class="jmd-array">{self._render_array(cast(list[Any], value))}</div>'
+            inner = self._render_array(value)
+            return f'<div class="jmd-array">{inner}</div>'
         return _scalar_html(serialize_scalar(value))
 
     def _render_object(self, obj: dict[str, Any]) -> str:
@@ -129,7 +130,7 @@ class JMDHTMLRenderer:
                 inner = self._render_object(cast(dict[str, Any], item))
                 parts.append(f'<div class="jmd-array-obj">{inner}</div>')
             elif isinstance(item, list):
-                inner = self._render_array(cast(list[Any], item))
+                inner = self._render_array(item)
                 parts.append(
                     f'<div class="jmd-array-nested">{inner}</div>'
                 )

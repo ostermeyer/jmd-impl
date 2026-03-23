@@ -1,12 +1,16 @@
-"""JMD Parser (v0.3 — heading-scope model with blockquotes and indentation continuation)."""
+"""JMD Parser (v0.3).
+
+Implements the heading-scope model with blockquote and indentation
+continuation support.
+"""
 
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from ._tokenizer import Line, tokenize, is_thematic_break
 from ._scalars import parse_key, parse_scalar
+from ._tokenizer import Line, is_thematic_break, tokenize
 
 try:
     from jmd._cparser import parse as _c_parse
@@ -26,9 +30,10 @@ def _is_object_item_content(content: str) -> bool:
 
 
 def _is_indent_field(raw_text: str) -> tuple[bool, str, str] | None:
-    """Check if a raw line is an indented continuation field (2+ spaces + key: value).
+    """Check if a raw line is an indented continuation field.
 
-    Returns (key_part, val_part) if it matches, None otherwise.
+    Matches lines starting with 2+ spaces followed by a key: value pair.
+    Returns (True, key_part, val_part) if it matches, None otherwise.
     """
     # Fast reject: must start with 2+ spaces
     if len(raw_text) < 2 or raw_text[0] != ' ' or raw_text[1] != ' ':
@@ -41,7 +46,7 @@ def _is_indent_field(raw_text: str) -> tuple[bool, str, str] | None:
 
 
 class JMDParser:
-    """Parses JMD v0.3 documents into Python dicts/lists.
+    r"""Parses JMD v0.3 documents into Python dicts/lists.
 
     Uses a scope stack driven by heading depth. Supports:
     - Blockquote multiline strings (> prefix)
@@ -49,7 +54,7 @@ class JMDParser:
     - Frontmatter (metadata before first heading, not serialized)
 
     Example:
-        >>> data = JMDParser().parse("# Order\\nid: 42\\nstatus: pending")
+        >>> data = JMDParser().parse("# Order\nid: 42\nstatus: pending")
         >>> data
         {'id': 42, 'status': 'pending'}
     """
@@ -92,7 +97,9 @@ class JMDParser:
             return _c_parse(body)
 
         # Root array: # [] or # Label[]
-        if first.heading_depth == 1 and (first.content == "[]" or first.content.endswith("[]")):
+        if first.heading_depth == 1 and (
+            first.content == "[]" or first.content.endswith("[]")
+        ):
             self._pos += 1
             return self._parse_array_body(depth=1)
 
@@ -138,7 +145,9 @@ class JMDParser:
                 self._advance()
                 continue
             # Bare key (no value)
-            if line.content and not line.content.startswith(">") and not line.content.startswith("- "):
+            if (line.content
+                    and not line.content.startswith(">")
+                    and not line.content.startswith("- ")):
                 self.frontmatter[parse_key(line.content)] = True
                 self._advance()
                 continue
@@ -186,7 +195,7 @@ class JMDParser:
                 while peek < lines_len and lines[peek].heading_depth == -1:
                     peek += 1
                 if peek < lines_len:
-                    nxt = lines[peek]
+                    nxt: Line = lines[peek]
                     if nxt.heading_depth > 0:
                         pos += 1
                         continue
@@ -218,8 +227,11 @@ class JMDParser:
                     # Check for blockquote multiline
                     pos += 1
                     self._pos = pos
-                    nxt = lines[pos] if pos < lines_len else None
-                    if nxt and nxt.heading_depth == 0 and nxt.raw_text.strip().startswith(">"):
+                    peek_line: Line | None = (
+                        lines[pos] if pos < lines_len else None
+                    )
+                    if (peek_line and peek_line.heading_depth == 0
+                            and peek_line.raw_text.strip().startswith(">")):
                         obj[key] = self._parse_blockquote()
                         pos = self._pos
                     else:
@@ -229,13 +241,14 @@ class JMDParser:
                     pos += 1
                 continue
 
-            # key: (colon at end of line, no space after) — also check for blockquote
+            # key: (colon at end, no space after) — also check for blockquote
             if content[-1:] == ":":
                 key = parse_key(content[:-1])
                 pos += 1
                 self._pos = pos
-                nxt = lines[pos] if pos < lines_len else None
-                if nxt and nxt.heading_depth == 0 and nxt.raw_text.strip().startswith(">"):
+                peek_line = lines[pos] if pos < lines_len else None
+                if (peek_line and peek_line.heading_depth == 0
+                        and peek_line.raw_text.strip().startswith(">")):
                     obj[key] = self._parse_blockquote()
                     pos = self._pos
                 else:
@@ -277,7 +290,8 @@ class JMDParser:
             if val_part == "":
                 # Check for blockquote
                 nxt = self._cur()
-                if nxt and nxt.heading_depth == 0 and nxt.raw_text.strip().startswith(">"):
+                if (nxt and nxt.heading_depth == 0
+                        and nxt.raw_text.strip().startswith(">")):
                     obj[key] = self._parse_blockquote()
                 else:
                     obj[key] = ""
@@ -289,7 +303,8 @@ class JMDParser:
         if content.endswith(":") and ": " not in content:
             key = parse_key(content[:-1])
             nxt = self._cur()
-            if nxt and nxt.heading_depth == 0 and nxt.raw_text.strip().startswith(">"):
+            if (nxt and nxt.heading_depth == 0
+                    and nxt.raw_text.strip().startswith(">")):
                 obj[key] = self._parse_blockquote()
             else:
                 obj[key] = ""
@@ -321,14 +336,17 @@ class JMDParser:
                     nxt = lines[peek]
                     nhd = nxt.heading_depth
                     nc = nxt.content
+                    _nc_is_item = (
+                        nc == "-"
+                        or (len(nc) > 1 and nc[0] == '-' and nc[1] == ' ')
+                    )
                     is_item = (
-                        (nhd == 0
-                         and (nc == "-" or (len(nc) > 1 and nc[0] == '-' and nc[1] == ' ')))
-                        or (nhd == depth
-                            and (nc == "-" or (len(nc) > 1 and nc[0] == '-' and nc[1] == ' ')))
+                        (nhd == 0 and _nc_is_item)
+                        or (nhd == depth and _nc_is_item)
                         or (nhd == depth_plus_1
                             and (nc == "[]" or nc == "-"
-                                 or (len(nc) > 1 and nc[0] == '-' and nc[1] == ' ')))
+                                 or (len(nc) > 1
+                                     and nc[0] == '-' and nc[1] == ' ')))
                     )
                     if is_item:
                         pos += 1
@@ -356,7 +374,9 @@ class JMDParser:
                     items_append(self._parse_item_object(depth))
                     pos = self._pos
                     continue
-                if hd == depth and len(content) > 1 and content[0] == '-' and content[1] == ' ':
+                if (hd == depth
+                        and len(content) > 1
+                        and content[0] == '-' and content[1] == ' '):
                     content_after = content[2:]
                     if _kv_match(content_after):
                         pos += 1
@@ -384,7 +404,9 @@ class JMDParser:
                 items_append(self._parse_item_object(depth))
                 pos = self._pos
                 continue
-            if hd == depth_plus_1 and len(content) > 1 and content[0] == '-' and content[1] == ' ':
+            if (hd == depth_plus_1
+                    and len(content) > 1
+                    and content[0] == '-' and content[1] == ' '):
                 content_after = content[2:]
                 if _kv_match(content_after):
                     pos += 1
@@ -464,8 +486,10 @@ class JMDParser:
         pos = self._pos
 
         # First: consume indented continuation fields (2+ spaces + key: value)
-        # Fast check: if current line doesn't start with space, skip this loop entirely
-        if pos < lines_len and lines[pos].raw_text and lines[pos].raw_text[0] == ' ':
+        # Fast check: if current line doesn't start with space, skip loop
+        if (pos < lines_len
+                and lines[pos].raw_text
+                and lines[pos].raw_text[0] == ' '):
             while pos < lines_len:
                 line = lines[pos]
                 raw = line.raw_text
@@ -547,7 +571,9 @@ class JMDParser:
             hd = line.heading_depth
             if hd == 0:
                 content = line.content
-                if content == "-" or (len(content) > 1 and content[0] == '-' and content[1] == ' '):
+                if (content == "-"
+                        or (len(content) > 1
+                            and content[0] == '-' and content[1] == ' ')):
                     break
 
                 # Bare field: key: value

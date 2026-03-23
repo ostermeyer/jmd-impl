@@ -1,6 +1,7 @@
 """JMD (JSON Markdown) — Parser, Serializer, and Tooling.
 
-Implements JMD Specification v0.3 — heading-scope model with blockquotes and indentation continuation.
+Implements JMD Specification v0.3 — heading-scope model with blockquotes
+and indentation continuation.
 
 Usage:
     python -m jmd                          # demo + roundtrip test
@@ -19,45 +20,45 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._tokenizer import Line, tokenize
-from ._scalars import parse_scalar, parse_key, serialize_scalar, quote_key
-from ._parser import JMDParser
-from ._serializer import JMDSerializer
-from ._html import JMDHTMLRenderer
-from ._streaming import StreamEvent, jmd_stream
-from ._query import (
-    Condition,
-    QueryField,
-    QueryObject,
-    QueryArray,
-    JMDQuery,
-    JMDQueryParser,
-    JMDQueryExecutor,
-)
-from ._schema import (
-    SchemaField,
-    SchemaObject,
-    SchemaArray,
-    SchemaRef,
-    JMDSchema,
-    JMDSchemaParser,
+from ._cli import (
+    SAMPLE_JMD,
+    SAMPLE_QUERY,
+    SAMPLE_RECORDS,
+    SAMPLE_SCHEMA,
+    dict_to_jmd,
+    jmd_parse_schema,
+    jmd_query,
+    jmd_schema_to_json_schema,
+    jmd_to_dict,
+    jmd_to_json,
+    json_schema_to_jmd_schema,
+    json_to_jmd,
 )
 from ._delete import JMDDelete, JMDDeleteParser
 from ._error import JMDError, JMDErrorItem, is_error_document, parse_error
-from ._cli import (
-    jmd_to_json,
-    json_to_jmd,
-    jmd_to_dict,
-    dict_to_jmd,
-    jmd_query,
-    jmd_parse_schema,
-    jmd_schema_to_json_schema,
-    json_schema_to_jmd_schema,
-    SAMPLE_JMD,
-    SAMPLE_QUERY,
-    SAMPLE_SCHEMA,
-    SAMPLE_RECORDS,
+from ._html import JMDHTMLRenderer
+from ._parser import JMDParser
+from ._query import (
+    Condition,
+    JMDQuery,
+    JMDQueryExecutor,
+    JMDQueryParser,
+    QueryArray,
+    QueryField,
+    QueryObject,
 )
+from ._scalars import parse_key, parse_scalar, quote_key, serialize_scalar
+from ._schema import (
+    JMDSchema,
+    JMDSchemaParser,
+    SchemaArray,
+    SchemaField,
+    SchemaObject,
+    SchemaRef,
+)
+from ._serializer import JMDSerializer
+from ._streaming import StreamEvent, jmd_stream
+from ._tokenizer import Line, tokenize
 
 # ---------------------------------------------------------------------------
 # C extension detection — done once at import time, not on every call
@@ -111,7 +112,7 @@ def serialize(data: Any, label: str = "Document") -> str:
         A JMD document string.
     """
     if _HAS_CSERIALIZER:
-        return _c_serialize(data, label)
+        return str(_c_serialize(data, label))
     return JMDSerializer().serialize(data, label=label)
 
 

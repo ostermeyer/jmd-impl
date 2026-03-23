@@ -34,7 +34,10 @@ _BARE_HEADING_RE = re.compile(r"^(#{1,6})$")
 
 def is_thematic_break(line: Line) -> bool:
     """Check if a line is a thematic break (``---`` or more hyphens)."""
-    return line.heading_depth == 0 and bool(_THEMATIC_BREAK_RE.match(line.content))
+    return (
+        line.heading_depth == 0
+        and bool(_THEMATIC_BREAK_RE.match(line.content))
+    )
 
 
 # Pre-bind compiled pattern methods for hot-path use
@@ -95,12 +98,12 @@ def tokenize(source: str) -> list[Line]:
     """
     result: list[Line] = []
     _result_append = result.append
-    _Line = Line
+    _line = Line
     _pl = _parse_line
     for i, raw in enumerate(source.splitlines()):
         text = raw.strip()
         if text:
             _result_append(_pl(i + 1, raw, text))
         else:
-            _result_append(_Line(i + 1, "", -1, ""))
+            _result_append(_line(i + 1, "", -1, ""))
     return result

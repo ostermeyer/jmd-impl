@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ._tokenizer import tokenize
 from ._parser import JMDParser
+from ._tokenizer import tokenize
 
 
 @dataclass
@@ -27,7 +27,7 @@ class JMDDelete:
 
 
 class JMDDeleteParser:
-    """Parses JMD delete documents (``#-``) into :class:`JMDDelete` objects.
+    r"""Parses JMD delete documents (``#-``) into :class:`JMDDelete` objects.
 
     A delete document reuses the data document body grammar — the ``#-`` root
     marker is the only syntactic difference from a data document.  The parser
@@ -35,12 +35,12 @@ class JMDDeleteParser:
 
     Example::
 
-        doc = JMDDeleteParser().parse("#- Order\\nid: 42")
+        doc = JMDDeleteParser().parse("#- Order\nid: 42")
         assert doc.label == "Order"
         assert doc.identifiers == {"id": 42}
         assert not doc.is_bulk
 
-        bulk = JMDDeleteParser().parse("#- []\\n- abc123\\n- def456")
+        bulk = JMDDeleteParser().parse("#- []\n- abc123\n- def456")
         assert bulk.is_bulk
         assert bulk.identifiers == ["abc123", "def456"]
     """
@@ -66,11 +66,14 @@ class JMDDeleteParser:
                 break
 
         if first is None or first.heading_depth != 1:
-            raise ValueError("Delete document must start with a '#-' root marker")
+            raise ValueError(
+                "Delete document must start with a '#-' root marker"
+            )
 
         if not first.content.startswith("- "):
             raise ValueError(
-                f"Expected '#-' root marker, got heading content: {first.content!r}"
+                "Expected '#-' root marker, got heading content: "
+                f"{first.content!r}"
             )
 
         label_part = first.content[2:].strip()

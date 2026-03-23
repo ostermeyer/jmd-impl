@@ -6,11 +6,12 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
-from ._tokenizer import tokenize, Line
+from ._parser import _is_indent_field, _is_object_item_content
 from ._scalars import parse_key, parse_scalar
-from ._parser import _is_object_item_content, _is_indent_field
+from ._tokenizer import Line, tokenize
 
-# Regex metacharacters that signal a regex pattern (excluding | which is handled separately)
+# Regex metacharacters that signal a regex pattern
+# (excluding | which is handled separately)
 _REGEX_META = re.compile(r'[.*+?^$\[\]()\\\-]')
 
 
@@ -97,7 +98,9 @@ def _parse_condition(raw: str) -> Condition:
 
     # Regex pattern: contains metacharacters (other than |) → fullmatch regex
     # Pure alternation (only | as metachar) → | op for simple set membership
-    if _REGEX_META.search(raw) or ("|" in raw and _REGEX_META.search(raw.replace("|", ""))):
+    if (_REGEX_META.search(raw)
+            or ("|" in raw
+                and _REGEX_META.search(raw.replace("|", "")))):
         return Condition(op="regex", values=[raw])
 
     parts = [parse_scalar(p.strip()) for p in raw.split("|")]
@@ -106,7 +109,10 @@ def _parse_condition(raw: str) -> Condition:
 
 
 class JMDQueryParser:
-    """Parses JMD QBE query documents (#?) using the v0.3 heading-scope model."""
+    """Parses JMD QBE query documents (#?) — v0.3 heading-scope model.
+
+    Implements the JMD Query-by-Example (QBE) syntax.
+    """
 
     def __init__(self) -> None:
         self._lines: list[Line] = []
@@ -298,7 +304,9 @@ class JMDQueryParser:
 class JMDQueryExecutor:
     """Executes a JMDQuery against a list of Python dicts."""
 
-    def execute(self, query: JMDQuery, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def execute(
+        self, query: JMDQuery, records: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         return [
             self._project(r, query.fields)
             for r in records
@@ -327,13 +335,13 @@ class JMDQueryExecutor:
                 if (isinstance(first, QueryField)
                         and first.key == "__scalar__"):
                     if not set(first.condition.values).issubset(
-                            set(cast(list[Any], arr))):
+                            set(arr)):
                         return False
                 else:
                     template = f.item_fields[0]
                     if not any(
                         self._match(cast(dict[str, Any], item), template)
-                        for item in cast(list[Any], arr)
+                        for item in arr
                         if isinstance(item, dict)
                     ):
                         return False
@@ -344,7 +352,7 @@ class JMDQueryExecutor:
         if op == "!":
             return not self._eval(val, values[0])
         if op in ("=", "in"):
-            return val == values[0]
+            return bool(val == values[0])
         if op == "|":
             return val in values
         if op == "regex":
@@ -369,7 +377,9 @@ class JMDQueryExecutor:
             pass
         return False
 
-    def _project(self, record: dict[str, Any], fields: list[Any]) -> dict[str, Any]:
+    def _project(
+        self, record: dict[str, Any], fields: list[Any]
+    ) -> dict[str, Any]:
         project_keys = {
             f.key for f in fields
             if isinstance(f, QueryField) and f.condition.op == "?"
@@ -416,10 +426,9 @@ class JMDQueryExecutor:
                     result[f.key] = arr
                 else:
                     template: Any = f.item_fields[0]
-                    typed_arr = cast(list[Any], arr)
                     result[f.key] = [
                         self._project(cast(dict[str, Any], item), template)
-                        for item in typed_arr
+                        for item in arr
                         if isinstance(item, dict)
                         and self._match(cast(dict[str, Any], item), template)
                     ]
