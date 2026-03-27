@@ -4,8 +4,24 @@ Python reference implementation of the [JMD specification](https://github.com/os
 
 ## Installation
 
+Install the latest version directly from GitHub:
+
 ```bash
-pip install jmd-format
+pip install git+https://github.com/ostermeyer/jmd-impl.git
+```
+
+Or pin a specific release:
+
+```bash
+pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.3
+```
+
+Pre-built wheels for Linux, macOS, and Windows are attached to each
+[GitHub Release](https://github.com/ostermeyer/jmd-impl/releases) and can be
+installed directly:
+
+```bash
+pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.3/jmd_format-0.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 The C extensions are built automatically during installation if a C compiler is available. If not, the pure-Python fallback is used transparently.
