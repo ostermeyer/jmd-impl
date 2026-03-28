@@ -633,7 +633,14 @@ jmd_serialize(PyObject *self, PyObject *args)
     }
 
     if (PyList_Check(data)) {
-        if (!outbuf_append(&ob, "# []", 4)) { outbuf_free(&ob); return NULL; }
+        if (!outbuf_append(&ob, "# ", 2)) { outbuf_free(&ob); return NULL; }
+        if (strcmp(label, "[]") == 0) {
+            if (!outbuf_append(&ob, "[]", 2)) { outbuf_free(&ob); return NULL; }
+        } else {
+            if (!outbuf_append(&ob, label, (Py_ssize_t)strlen(label)))
+                { outbuf_free(&ob); return NULL; }
+            if (!outbuf_append(&ob, "[]", 2)) { outbuf_free(&ob); return NULL; }
+        }
         if (!ser_write_array_items(&ob, data, 1)) { outbuf_free(&ob); return NULL; }
     }
     else if (PyDict_Check(data)) {
