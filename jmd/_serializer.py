@@ -22,7 +22,8 @@ class JMDSerializer:
         """Serialize a Python value to a JMD document string."""
         lines: list[str] = []
         if isinstance(data, list):
-            lines.append("# []")
+            root = "# []" if label == "[]" else f"# {label}[]"
+            lines.append(root)
             self._write_array_items(data, lines, depth=1)
         else:
             lines.append(f"# {label}")
