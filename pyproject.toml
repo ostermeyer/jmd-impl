@@ -10,6 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Andreas Ostermeyer", email = "andreas@ostermeyer.de" }]
 requires-python = ">=3.10"
+dependencies = ["lxml>=5.0"]
 keywords = ["jmd", "llm", "structured-data", "json", "markdown", "mcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
