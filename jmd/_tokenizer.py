@@ -26,10 +26,10 @@ class Line:
         self.content = content
 
 
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)")
+_HEADING_RE = re.compile(r"^(#{1,})\s+(.*)")
 _ROOT_MARKER_RE = re.compile(r"^#([?!\-])\s+(.*)")
 _THEMATIC_BREAK_RE = re.compile(r"^-{3,}$")
-_BARE_HEADING_RE = re.compile(r"^(#{1,6})$")
+_BARE_HEADING_RE = re.compile(r"^(#{1,})$")
 
 
 def is_thematic_break(line: Line) -> bool:

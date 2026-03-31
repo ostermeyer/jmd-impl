@@ -152,7 +152,7 @@ detect_heading(const char *text, Py_ssize_t text_len,
 
     /* Count consecutive '#' */
     int depth = 0;
-    while (depth < text_len && depth < 6 && text[depth] == '#')
+    while (depth < text_len && text[depth] == '#')
         depth++;
 
     /* Bare heading: just "##..." with nothing after */
