@@ -1,6 +1,6 @@
 # jmd-format — Python Reference Implementation
 
-Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.3). Includes a C-accelerated parser and serializer.
+Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.4). Includes a C-accelerated parser and serializer, plus lossless XML↔JMD conversion.
 
 ## Installation
 
@@ -13,7 +13,7 @@ pip install git+https://github.com/ostermeyer/jmd-impl.git
 Or pin a specific release:
 
 ```bash
-pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.3
+pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.4
 ```
 
 Pre-built wheels for Linux, macOS, and Windows are attached to each
@@ -21,7 +21,7 @@ Pre-built wheels for Linux, macOS, and Windows are attached to each
 installed directly:
 
 ```bash
-pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.3/jmd_format-0.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.4/jmd_format-0.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 The C extensions are built automatically during installation if a C compiler is available. If not, the pure-Python fallback is used transparently.
@@ -76,6 +76,23 @@ from jmd import jmd_stream
 for event in jmd_stream(source):
     print(event)
 ```
+
+## XML Mapping
+
+Lossless conversion between data XML and JMD (requires `lxml`):
+
+```python
+from jmd.xml import xml_to_jmd, jmd_to_xml
+
+jmd_source = xml_to_jmd(xml_bytes_or_str)  # XML → JMD string
+xml_output  = jmd_to_xml(jmd_source)        # JMD → XML bytes
+```
+
+Targets data XML — OOXML (WordprocessingML, DrawingML, SpreadsheetML),
+SOAP, XBRL, XRechnung, and similar formats. Mixed-content XML (ODF, XHTML)
+is out of scope.
+
+See the [JMD over XML companion specification](https://github.com/ostermeyer/jmd-spec/blob/main/jmd-over-xml.md) for the full mapping rules.
 
 ## C Extensions
 
