@@ -45,11 +45,17 @@ _QUOTED_FIELD_RE = re.compile(r'^"([^"\\]*)": *(.*)')
 # ---------------------------------------------------------------------------
 
 
-def xml_to_jmd(source: str | bytes) -> str:
+def xml_to_jmd(
+    source: str | bytes,
+    max_depth: int | None = None,
+) -> str:
     """Convert an XML document to a JMD over XML document.
 
     Args:
         source: XML source as a string or bytes.
+        max_depth: Maximum heading depth to emit.  Elements at a depth
+            greater than ``max_depth`` are omitted entirely.  Defaults to
+            ``None`` (unlimited).
 
     Returns:
         JMD document string.
@@ -58,7 +64,7 @@ def xml_to_jmd(source: str | bytes) -> str:
         source = source.encode()
     root = etree.fromstring(source)
     lines: list[str] = []
-    _element_to_jmd(root, 1, lines, {})
+    _element_to_jmd(root, 1, lines, {}, max_depth)
     # Remove any leading blank line artifact and ensure single trailing newline
     text = "\n".join(lines)
     return text.strip("\n") + "\n"
@@ -153,6 +159,7 @@ def _element_to_jmd(
     depth: int,
     lines: list[str],
     parent_nsmap: dict[str | None, str],
+    max_depth: int | None = None,
 ) -> None:
     """Recursively serialize an lxml element to JMD lines.
 
@@ -161,6 +168,8 @@ def _element_to_jmd(
         depth: Current heading depth (1 = root, 2 = first child level, …).
         lines: Accumulator list; lines are appended in place.
         parent_nsmap: Namespace map of the parent element.
+        max_depth: Maximum heading depth to emit.  Children of an element
+            at ``max_depth`` are omitted.  ``None`` means unlimited.
     """
     qname = _clark_to_qname(element.tag, element.nsmap)
     hashes = "#" * depth
@@ -203,9 +212,10 @@ def _element_to_jmd(
         lines.append(f"_: {_serialize_xml_str(text)}")
 
     # Recurse into children, separated by blank lines for readability
-    for child in element:
-        lines.append("")
-        _element_to_jmd(child, depth + 1, lines, element.nsmap)
+    if max_depth is None or depth < max_depth:
+        for child in element:
+            lines.append("")
+            _element_to_jmd(child, depth + 1, lines, element.nsmap, max_depth)
 
 
 # ---------------------------------------------------------------------------
