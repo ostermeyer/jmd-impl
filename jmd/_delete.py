@@ -77,8 +77,14 @@ class JMDDeleteParser:
             )
 
         label_part = first.content[2:].strip()
-        is_bulk = label_part == "[]"
-        label = "" if is_bulk else label_part
+        is_bulk = label_part == "[]" or label_part.endswith("[]")
+        label = (
+            ""
+            if label_part == "[]"
+            else label_part[:-2]
+            if is_bulk
+            else label_part
+        )
 
         body = JMDParser().parse(source)
 

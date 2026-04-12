@@ -48,6 +48,24 @@ class TestDeleteParsing:
         assert len(d.identifiers) == 2
         assert d.identifiers[0] == {"table": "orders", "id": 42}
 
+    def test_labeled_bulk_deletion(self) -> None:
+        """Test #- Table[] with a label and scalar IDs."""
+        d = parse_delete("#- Orders[]\n- 42\n- 43\n- 44")
+        assert d.is_bulk is True
+        assert d.label == "Orders"
+        assert d.identifiers == [42, 43, 44]
+
+    def test_labeled_bulk_deletion_object_ids(self) -> None:
+        """Test #- Table[] with a label and object IDs."""
+        d = parse_delete(
+            "#- Orders[]\n- id: 42\n  status: old\n"
+            "- id: 43\n  status: old"
+        )
+        assert d.is_bulk is True
+        assert d.label == "Orders"
+        assert len(d.identifiers) == 2
+        assert d.identifiers[0] == {"id": 42, "status": "old"}
+
     def test_wrong_marker_raises(self) -> None:
         """Test that a data document marker raises ValueError."""
         with pytest.raises(ValueError):
