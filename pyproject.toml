@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jmd-format"
-version = "0.4.1"
+version = "0.4.2"
 description = "JMD (JSON Markdown) — structured data format for LLM-driven infrastructure"
 readme = "README.md"
 license = { file = "LICENSE" }
