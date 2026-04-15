@@ -98,22 +98,45 @@ def parse(source: str) -> Any:
     return JMDParser().parse(source)
 
 
-def serialize(data: Any, label: str = "Document") -> str:
+def serialize(
+    data: Any,
+    label: str = "Document",
+    frontmatter: dict[str, Any] | None = None,
+) -> str:
     """Serialize a Python value to a JMD document string.
 
     Uses the C-accelerated serializer if available; falls back to the
-    pure-Python :class:`JMDSerializer` otherwise.
+    pure-Python :class:`JMDSerializer` otherwise.  The mode marker is
+    carried as a prefix on ``label`` (e.g. ``"- Order"`` for delete,
+    ``"? Order"`` for query, ``"! Order"`` for schema); plain data
+    documents pass the label unadorned.
 
     Args:
-        data:  Python ``dict``, ``list``, or scalar value.
-        label: Root heading label.
+        data:        Python ``dict``, ``list``, or scalar value.
+        label:       Root heading label, optionally mode-prefixed.
+        frontmatter: Optional mapping of frontmatter keys to values,
+            emitted above the root heading separated by one blank line
+            (§3.5).  A value of ``True`` produces a bare key line.
 
     Returns:
         A JMD document string.
     """
     if _HAS_CSERIALIZER:
-        return str(_c_serialize(data, label))
-    return JMDSerializer().serialize(data, label=label)
+        body = str(_c_serialize(data, label))
+    else:
+        body = JMDSerializer().serialize(data, label=label)
+    if not frontmatter:
+        return body
+    from ._scalars import quote_key, serialize_scalar
+    lines: list[str] = []
+    for k, v in frontmatter.items():
+        if v is True:
+            lines.append(quote_key(k))
+        else:
+            lines.append(f"{quote_key(k)}: {serialize_scalar(v)}")
+    lines.append("")  # blank line separating frontmatter from heading
+    lines.append(body)
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

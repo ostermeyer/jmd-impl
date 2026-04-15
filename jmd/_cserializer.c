@@ -632,20 +632,39 @@ jmd_serialize(PyObject *self, PyObject *args)
         return NULL;
     }
 
+    /* Split off optional mode prefix: `- Label`, `? Label`, `! Label`.
+       The mark attaches directly to `#` in the canonical root heading
+       (`#- Label`), with no space between `#` and the mark. */
+    const char *rest = label;
+    char mark = 0;
+    size_t label_len = strlen(label);
+    if (label_len >= 2
+        && (label[0] == '-' || label[0] == '?' || label[0] == '!')
+        && label[1] == ' ') {
+        mark = label[0];
+        rest = label + 2;
+    }
+
     if (PyList_Check(data)) {
-        if (!outbuf_append(&ob, "# ", 2)) { outbuf_free(&ob); return NULL; }
-        if (strcmp(label, "[]") == 0) {
+        if (!outbuf_append(&ob, "#", 1)) { outbuf_free(&ob); return NULL; }
+        if (mark && !outbuf_append(&ob, &mark, 1))
+            { outbuf_free(&ob); return NULL; }
+        if (!outbuf_append(&ob, " ", 1)) { outbuf_free(&ob); return NULL; }
+        if (strcmp(rest, "[]") == 0) {
             if (!outbuf_append(&ob, "[]", 2)) { outbuf_free(&ob); return NULL; }
         } else {
-            if (!outbuf_append(&ob, label, (Py_ssize_t)strlen(label)))
+            if (!outbuf_append(&ob, rest, (Py_ssize_t)strlen(rest)))
                 { outbuf_free(&ob); return NULL; }
             if (!outbuf_append(&ob, "[]", 2)) { outbuf_free(&ob); return NULL; }
         }
         if (!ser_write_array_items(&ob, data, 1)) { outbuf_free(&ob); return NULL; }
     }
     else if (PyDict_Check(data)) {
-        if (!outbuf_append(&ob, "# ", 2)) { outbuf_free(&ob); return NULL; }
-        if (!outbuf_append(&ob, label, (Py_ssize_t)strlen(label)))
+        if (!outbuf_append(&ob, "#", 1)) { outbuf_free(&ob); return NULL; }
+        if (mark && !outbuf_append(&ob, &mark, 1))
+            { outbuf_free(&ob); return NULL; }
+        if (!outbuf_append(&ob, " ", 1)) { outbuf_free(&ob); return NULL; }
+        if (!outbuf_append(&ob, rest, (Py_ssize_t)strlen(rest)))
             { outbuf_free(&ob); return NULL; }
         if (!ser_write_object_fields(&ob, data, 1))
             { outbuf_free(&ob); return NULL; }

@@ -7,6 +7,28 @@ from typing import Any, cast
 from ._scalars import quote_key, serialize_scalar
 
 
+def _split_label(label: str) -> tuple[str, str]:
+    """Split an optional mode-prefix off a root-heading label.
+
+    Mode markers (``-``, ``?``, ``!``) attach directly to ``#`` in the
+    root heading: ``#- Order``, ``#? Order``, ``#! Order``. Callers
+    pass the mark as a ``- ``, ``? `` or ``! `` prefix on ``label``;
+    the serializer attaches it to ``#`` without a space between them.
+    Plain data documents (no prefix) emit ``# Label``.
+
+    Args:
+        label: Label string, optionally carrying a mode prefix.
+
+    Returns:
+        Tuple ``(mark, rest)`` where ``mark`` is ``""`` for data mode
+        or one of ``"-"``, ``"?"``, ``"!"`` and ``rest`` is the label
+        without the prefix.
+    """
+    if len(label) >= 2 and label[0] in "-?!" and label[1] == " ":
+        return label[0], label[2:]
+    return "", label
+
+
 class JMDSerializer:
     r"""Serializes Python dicts/lists to JMD v0.3 format.
 
@@ -20,13 +42,15 @@ class JMDSerializer:
 
     def serialize(self, data: Any, label: str = "Document") -> str:
         """Serialize a Python value to a JMD document string."""
+        mark, rest = _split_label(label)
+        prefix = f"#{mark} "
         lines: list[str] = []
         if isinstance(data, list):
-            root = "# []" if label == "[]" else f"# {label}[]"
+            root = f"{prefix}[]" if rest == "[]" else f"{prefix}{rest}[]"
             lines.append(root)
             self._write_array_items(data, lines, depth=1)
         else:
-            lines.append(f"# {label}")
+            lines.append(f"{prefix}{rest}")
             self._write_object_fields(
                 cast(dict[str, Any], data), lines, depth=1
             )
