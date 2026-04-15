@@ -19,6 +19,13 @@ are grouped by document mode:
 * ``tolerance/`` — inputs exercising parser-tolerance rules where the
   canonical output diverges from the input.  Only the **Parse** test
   runs; Serialize would re-canonicalize and therefore not match.
+
+Every test runs against both available backends — the C accelerator
+(the production default when compiled) and the pure-Python fallback
+(what users without a compiler get).  The ``backend`` fixture
+monkeypatches ``_HAS_CPARSER`` / ``_HAS_CSERIALIZER`` to force the
+fallback path; without this, a regression in the pure-Python code
+would be invisible whenever a ``.so`` is present.
 """
 
 from __future__ import annotations
@@ -91,6 +98,31 @@ _PAIRS = _collect_pairs()
 _CANONICAL = [p for p in _PAIRS if p[0] != "tolerance"]
 _CANONICAL_IDS = [f"{m}/{p.stem}" for m, p, _ in _CANONICAL]
 
+# Which backends to exercise.  "c" uses the C-accelerated parser/
+# serializer if compiled; "py" forces the pure-Python fallback by
+# monkey-patching the availability flags.  Having both paths in the
+# conformance suite guards against silent drift between the two — the
+# original wrapper picked one at import time, leaving the other path
+# untested.
+_BACKENDS = ["c", "py"]
+
+
+@pytest.fixture(params=_BACKENDS)
+def backend(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch,
+) -> str:
+    """Select the parser/serializer backend for a test run.
+
+    The ``"c"`` param leaves the module flags alone (C accelerator
+    wins if available).  The ``"py"`` param disables both accelerators
+    so the pure-Python implementations are exercised.
+    """
+    backend_name: str = request.param
+    if backend_name == "py":
+        monkeypatch.setattr(jmd, "_HAS_CPARSER", False)
+        monkeypatch.setattr(jmd, "_HAS_CSERIALIZER", False)
+    return backend_name
+
 
 @pytest.mark.skipif(
     not _PAIRS,
@@ -103,10 +135,13 @@ _CANONICAL_IDS = [f"{m}/{p.stem}" for m, p, _ in _CANONICAL]
     ids=[f"{m}/{p.stem}" for m, p, _ in _PAIRS],
 )
 def test_parse(
-    mode: str, jmd_path: pathlib.Path, json_path: pathlib.Path,
+    backend: str,
+    mode: str,
+    jmd_path: pathlib.Path,
+    json_path: pathlib.Path,
 ) -> None:
     """Parse the fixture and deep-compare against the expected JSON value."""
-    del mode  # used only for the test id
+    del backend, mode  # used only for the test id
     jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     assert jmd.parse(jmd_text) == expected
@@ -120,9 +155,13 @@ def test_parse(
     ("mode", "jmd_path", "json_path"), _CANONICAL, ids=_CANONICAL_IDS,
 )
 def test_serialize(
-    mode: str, jmd_path: pathlib.Path, json_path: pathlib.Path,
+    backend: str,
+    mode: str,
+    jmd_path: pathlib.Path,
+    json_path: pathlib.Path,
 ) -> None:
     """Serialize the .json and byte-compare against the .jmd fixture."""
+    del backend  # used only for the test id
     jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     label = _label_arg(mode, _extract_label(jmd_text))
@@ -146,9 +185,13 @@ def test_serialize(
     ("mode", "jmd_path", "json_path"), _CANONICAL, ids=_CANONICAL_IDS,
 )
 def test_roundtrip(
-    mode: str, jmd_path: pathlib.Path, json_path: pathlib.Path,
+    backend: str,
+    mode: str,
+    jmd_path: pathlib.Path,
+    json_path: pathlib.Path,
 ) -> None:
     """Parse, serialize, parse again — must yield the original value."""
+    del backend  # used only for the test id
     jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     label = _label_arg(mode, _extract_label(jmd_text))

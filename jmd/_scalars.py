@@ -93,6 +93,11 @@ def _needs_quote(s: str) -> bool:
     Returns:
         True if the value must be quoted for unambiguous parsing.
     """
+    if s == "":
+        # A bare empty string would be indistinguishable from a blockquote
+        # field start (`key:`); emit `""` to preserve the empty-string
+        # value through round-trip.  The C accelerator already does this.
+        return True
     if s == "-":
         return True
     if s in ("null", "true", "false"):
