@@ -108,6 +108,6 @@ See [jmd-spec](https://github.com/ostermeyer/jmd-spec) for the full format speci
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](LICENSE).
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
 
-The JMD format specification is licensed separately under CC BY-NC-SA 4.0.
+The JMD format specification is licensed separately under [CC BY 4.0](https://github.com/ostermeyer/jmd-spec/blob/main/LICENSE).
