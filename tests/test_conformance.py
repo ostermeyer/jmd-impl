@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """Conformance tests against the canonical JMD test suite.
 
-Fixtures live in the sibling ``jmd-spec`` repository at
-``conformance/``.  The search path can be overridden with the
-``JMD_FIXTURES`` environment variable.
+Fixtures live in ``jmd-spec`` at ``conformance/``.  They are located
+via the first path that exists, in this order:
+
+1. the ``JMD_FIXTURES`` environment variable (explicit override)
+2. ``vendor/jmd-spec/conformance/`` (git submodule, preferred in CI)
+3. ``../jmd-spec/conformance/`` (sibling checkout in a workspace)
 
 Each fixture is a pair ``<name>.jmd`` + ``<name>.json``.  Fixtures
 are grouped by document mode:
@@ -56,8 +59,14 @@ def _fixtures_root() -> pathlib.Path | None:
     if env:
         return pathlib.Path(env)
     here = pathlib.Path(__file__).resolve().parent
-    candidate = here.parent.parent / "jmd-spec" / "conformance"
-    return candidate if candidate.exists() else None
+    repo_root = here.parent
+    for candidate in (
+        repo_root / "vendor" / "jmd-spec" / "conformance",
+        repo_root.parent / "jmd-spec" / "conformance",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _collect_pairs() -> list[tuple[str, pathlib.Path, pathlib.Path]]:
