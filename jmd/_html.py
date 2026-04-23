@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """JMD HTML Renderer (v0.2)."""
 
 from __future__ import annotations

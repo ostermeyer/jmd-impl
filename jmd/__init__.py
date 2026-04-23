@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """JMD (JSON Markdown) — Parser, Serializer, and Tooling.
 
 Implements JMD Specification v0.3 — heading-scope model with blockquotes

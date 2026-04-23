@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for streaming parser — event sequences (spec § 18)."""
 
 from jmd import StreamEvent, jmd_stream

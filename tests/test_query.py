@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for JMD Query by Example (spec § 13)."""
 
 from typing import Any

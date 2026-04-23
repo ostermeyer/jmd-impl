@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """JMD scalar parsing, serialization, and inline field helpers."""
 
 from __future__ import annotations

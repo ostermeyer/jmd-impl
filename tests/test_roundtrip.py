@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Lossless roundtrip tests: JSON → JMD → JSON (spec § 1)."""
 
 import json

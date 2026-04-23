@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """JMD Parser (v0.3).
 
 Implements the heading-scope model with blockquote and indentation

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for JMDSerializer (spec §§ 2–11)."""
 
 from typing import Any

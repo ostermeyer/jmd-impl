@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for JMD Delete Documents (spec § 15)."""
 
 import pytest

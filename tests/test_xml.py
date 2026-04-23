@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for jmd.xml — JMD over XML mapping."""
 
 from __future__ import annotations

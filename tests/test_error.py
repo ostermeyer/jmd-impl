@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for JMD Error Documents (spec § 17)."""
 
 import pytest

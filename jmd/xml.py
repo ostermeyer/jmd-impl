@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """XML ↔ JMD conversion — JMD over XML companion specification.
 
 Implements a lossless mapping between data XML and JMD following the

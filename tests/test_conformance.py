@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Conformance tests against the canonical JMD test suite.
 
 Fixtures live in the sibling ``jmd-spec`` repository at

@@ -2,7 +2,10 @@
  * _cserializer.c — C-accelerated JMD serializer (CPython extension).
  *
  * Copyright (c) 2026 Andreas Ostermeyer <andreas@ostermeyer.de>
- * Licensed under AGPL-3.0 — see LICENSE-CODE for details.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0.
+ * See LICENSE at the repository root for the full license text.
  *
  * Provides a drop-in replacement for JMDSerializer().serialize() that
  * operates directly on Python objects with no intermediate data structure.

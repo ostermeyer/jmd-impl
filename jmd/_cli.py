@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """JMD CLI commands and sample data."""
 
 from __future__ import annotations

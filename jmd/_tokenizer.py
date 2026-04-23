@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """JMD line tokenizer.
 
 Splits a JMD document into Line tokens with heading depth information.

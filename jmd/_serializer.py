@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """JMD Serializer (v0.3 — indentation continuation, blockquote multiline)."""
 
 from __future__ import annotations

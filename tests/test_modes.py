@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for document mode detection and top-level API (spec § 19)."""
 
 from jmd import jmd_mode, parse, serialize
