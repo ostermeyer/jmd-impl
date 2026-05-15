@@ -104,9 +104,27 @@ def _label_arg(mode: str, label: str) -> str:
     return _MODE_PREFIX.get(mode, "") + label
 
 
-_PAIRS = _collect_pairs()
+def _collect_must_fail() -> list[tuple[pathlib.Path, pathlib.Path]]:
+    """Return (jmd_path, error_json_path) for every must-fail fixture pair."""
+    root = _fixtures_root()
+    if root is None:
+        return []
+    mf_dir = root / "must-fail"
+    if not mf_dir.is_dir():
+        return []
+    pairs: list[tuple[pathlib.Path, pathlib.Path]] = []
+    for jmd_path in sorted(mf_dir.glob("*.jmd")):
+        err_path = jmd_path.with_suffix(".error.json")
+        if err_path.exists():
+            pairs.append((jmd_path, err_path))
+    return pairs
+
+
+_PAIRS = [p for p in _collect_pairs() if p[0] != "must-fail"]
 _CANONICAL = [p for p in _PAIRS if p[0] != "tolerance"]
 _CANONICAL_IDS = [f"{m}/{p.stem}" for m, p, _ in _CANONICAL]
+_MUST_FAIL = _collect_must_fail()
+_MUST_FAIL_IDS = [f"must-fail/{p.stem}" for p, _ in _MUST_FAIL]
 
 # Which backends to exercise.  "c" uses the C-accelerated parser/
 # serializer if compiled; "py" forces the pure-Python fallback by
@@ -210,3 +228,31 @@ def test_roundtrip(
     fm = parser.frontmatter or None
     out = jmd.serialize(value, label=label, frontmatter=fm)
     assert jmd.parse(out) == expected
+
+
+@pytest.mark.skipif(
+    not _MUST_FAIL,
+    reason="jmd-spec must-fail fixtures not found",
+)
+@pytest.mark.parametrize(
+    ("jmd_path", "err_path"), _MUST_FAIL, ids=_MUST_FAIL_IDS,
+)
+def test_must_fail(
+    backend: str,
+    jmd_path: pathlib.Path,
+    err_path: pathlib.Path,
+) -> None:
+    """Parser MUST reject the fixture with the expected structured error.
+
+    Asserts only kind and line — wording and exception subclass identity
+    are implementation-specific. ``key`` and other advisory fields in
+    the .error.json are not asserted.
+    """
+    del backend  # only used for the test id
+    from jmd._parser import JMDParseError
+    expected = json.loads(err_path.read_text(encoding="utf-8"))
+    jmd_text = jmd_path.read_text(encoding="utf-8")
+    with pytest.raises(JMDParseError) as exc:
+        jmd.parse(jmd_text)
+    assert exc.value.kind == expected["kind"]
+    assert exc.value.line == expected["line"]
