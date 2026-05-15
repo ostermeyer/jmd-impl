@@ -85,6 +85,57 @@ def parse_key(raw: str) -> str:
     return raw
 
 
+def split_kv(content: str) -> tuple[str, str] | None:
+    """Split a ``key: value`` line, respecting JSON-quoted keys (D10).
+
+    Plain ``content.partition(": ")`` mis-splits when the key is a quoted
+    string containing ``": "`` (e.g. ``"foo: bar": value``). This helper
+    finds the colon-space that follows the key proper, by scanning past
+    a leading quoted key if present.
+
+    Args:
+        content: A non-empty ``key: value`` line.
+
+    Returns:
+        A ``(key_raw, value_raw)`` tuple — both still in their raw form
+        (the key keeps its surrounding quotes if any) — or ``None`` if
+        the line does not contain a valid ``: `` separator after the
+        key. Use :func:`parse_key` to strip key quotes after the split.
+    """
+    if len(content) < 3:  # minimum "k: v"
+        return None
+    if content[0] == '"':
+        # Quoted key: find closing quote, then expect ": " (optionally
+        # preceded by "[]" for an array-typed key in schema documents).
+        i = 1
+        n = len(content)
+        while i < n:
+            ch = content[i]
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                # Closing quote at index i. Look for "[]: " or ": ".
+                if (i + 4 < n
+                        and content[i + 1] == "["
+                        and content[i + 2] == "]"
+                        and content[i + 3] == ":"
+                        and content[i + 4] == " "):
+                    return content[: i + 3], content[i + 5 :]
+                if (i + 2 < n
+                        and content[i + 1] == ":"
+                        and content[i + 2] == " "):
+                    return content[: i + 1], content[i + 3 :]
+                return None
+            i += 1
+        return None
+    # Bare key: split on the first ': ' that lies after a valid key prefix.
+    idx = content.find(": ")
+    if idx <= 0:
+        return None
+    return content[:idx], content[idx + 2 :]
+
+
 def _needs_quote(s: str) -> bool:
     """Check whether a string value needs quoting.
 

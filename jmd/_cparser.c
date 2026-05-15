@@ -39,6 +39,168 @@ typedef struct {
 
 static KeyCacheEntry key_cache[KEY_CACHE_SIZE];
 
+/* ------------------------------------------------------------------ */
+/* §7.4 kinds singletons + structured-error helper                     */
+/* ------------------------------------------------------------------ */
+
+/* Kind constants — interned strings, mirror jmd._parser._K_* tags.
+   Pointer identity is used for fast comparison.  Initialized in
+   PyInit__cparser. */
+static PyObject *K_OBJECT          = NULL;
+static PyObject *K_ARRAY_SIGIL     = NULL;
+static PyObject *K_ARRAY_PROMOTED  = NULL;
+static PyObject *K_SCALAR_BARE     = NULL;
+static PyObject *K_SCALAR_HEADING  = NULL;
+
+/* JMDParseError class — imported lazily on first error-raise from
+   jmd._parser, so this module need not depend on _parser at import
+   time.  See raise_jmd_parse_error. */
+static PyObject *JMDParseError_class = NULL;
+
+static int
+ensure_error_class(void)
+{
+    if (JMDParseError_class) return 0;
+    PyObject *mod = PyImport_ImportModule("jmd._parser");
+    if (!mod) return -1;
+    JMDParseError_class = PyObject_GetAttrString(mod, "JMDParseError");
+    Py_DECREF(mod);
+    return JMDParseError_class ? 0 : -1;
+}
+
+/* Raise JMDParseError(kind=..., line=..., key=..., form={...}). The
+   ``form`` dict carries existing+new kind strings (interned, so the
+   pointers match those returned by PyDict_GetItem on the kinds dict).
+   Returns -1 with the Python exception set. */
+static int
+raise_jmd_parse_error(const char *kind, int line, PyObject *key,
+                      PyObject *existing_kind, PyObject *new_kind)
+{
+    if (ensure_error_class() < 0) return -1;
+    PyObject *kw = PyDict_New();
+    if (!kw) return -1;
+    PyObject *kind_obj = PyUnicode_FromString(kind);
+    PyObject *line_obj = PyLong_FromLong((long)line);
+    PyObject *form = PyDict_New();
+    if (!kind_obj || !line_obj || !form) {
+        Py_XDECREF(kind_obj); Py_XDECREF(line_obj);
+        Py_XDECREF(form); Py_DECREF(kw);
+        return -1;
+    }
+    if (existing_kind)
+        PyDict_SetItemString(form, "existing", existing_kind);
+    if (new_kind)
+        PyDict_SetItemString(form, "new", new_kind);
+    PyDict_SetItemString(kw, "kind", kind_obj);
+    PyDict_SetItemString(kw, "line", line_obj);
+    PyDict_SetItemString(kw, "key", key);
+    PyDict_SetItemString(kw, "form", form);
+    Py_DECREF(kind_obj); Py_DECREF(line_obj); Py_DECREF(form);
+    PyObject *args = PyTuple_New(0);
+    PyObject *exc = PyObject_Call(JMDParseError_class, args, kw);
+    Py_DECREF(args); Py_DECREF(kw);
+    if (!exc) return -1;
+    PyErr_SetObject(JMDParseError_class, exc);
+    Py_DECREF(exc);
+    return -1;
+}
+
+/* §7.4.1 promote-to-array helper for an object-heading "## key".
+   On first occurrence, sets obj[key] = value (a dict) and records
+   K_OBJECT.  On second occurrence, promotes to [prev, value] and
+   records K_ARRAY_PROMOTED.  Subsequent occurrences append.  Returns
+   0 on success, -1 on error (with exception set). */
+static int
+set_object_heading(PyObject *obj, PyObject *kinds, PyObject *key,
+                   PyObject *value, int line)
+{
+    PyObject *existing_kind = PyDict_GetItem(kinds, key);  /* borrowed */
+    if (!existing_kind) {
+        if (PyDict_SetItem(obj, key, value) < 0) return -1;
+        return PyDict_SetItem(kinds, key, K_OBJECT);
+    }
+    if (existing_kind == K_OBJECT) {
+        PyObject *existing = PyDict_GetItem(obj, key);  /* borrowed */
+        if (!existing) {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "kinds tracker out of sync with obj");
+            return -1;
+        }
+        Py_INCREF(existing);
+        PyObject *arr = PyList_New(2);
+        if (!arr) { Py_DECREF(existing); return -1; }
+        PyList_SET_ITEM(arr, 0, existing);  /* steals */
+        Py_INCREF(value);
+        PyList_SET_ITEM(arr, 1, value);     /* steals */
+        if (PyDict_SetItem(obj, key, arr) < 0) { Py_DECREF(arr); return -1; }
+        Py_DECREF(arr);
+        return PyDict_SetItem(kinds, key, K_ARRAY_PROMOTED);
+    }
+    if (existing_kind == K_ARRAY_PROMOTED) {
+        PyObject *existing = PyDict_GetItem(obj, key);  /* borrowed */
+        if (!existing || !PyList_Check(existing)) {
+            PyErr_SetString(PyExc_RuntimeError,
+                            "promoted-array slot is not a list");
+            return -1;
+        }
+        return PyList_Append(existing, value);
+    }
+    if (existing_kind == K_ARRAY_SIGIL) {
+        return raise_jmd_parse_error("sigil_conflict", line, key,
+                                     K_ARRAY_SIGIL, K_OBJECT);
+    }
+    /* existing is scalar (bare or heading) */
+    return raise_jmd_parse_error("repeated_scalar_key", line, key,
+                                 existing_kind, K_OBJECT);
+}
+
+/* §7.4 helper for an array-sigil heading "## key[]". On first
+   occurrence, sets obj[key] = value (a list) and records K_ARRAY_SIGIL.
+   Any repetition is an error per §7.4.2(b) or (a). */
+static int
+set_array_sigil_heading(PyObject *obj, PyObject *kinds, PyObject *key,
+                        PyObject *value, int line)
+{
+    PyObject *existing_kind = PyDict_GetItem(kinds, key);  /* borrowed */
+    if (!existing_kind) {
+        if (PyDict_SetItem(obj, key, value) < 0) return -1;
+        return PyDict_SetItem(kinds, key, K_ARRAY_SIGIL);
+    }
+    if (existing_kind == K_ARRAY_SIGIL) {
+        return raise_jmd_parse_error("repeated_explicit_array", line, key,
+                                     K_ARRAY_SIGIL, K_ARRAY_SIGIL);
+    }
+    if (existing_kind == K_OBJECT || existing_kind == K_ARRAY_PROMOTED) {
+        return raise_jmd_parse_error("sigil_conflict", line, key,
+                                     existing_kind, K_ARRAY_SIGIL);
+    }
+    /* existing is scalar */
+    return raise_jmd_parse_error("repeated_scalar_key", line, key,
+                                 existing_kind, K_ARRAY_SIGIL);
+}
+
+/* §7.4.2(c) helper for a bare field or scalar heading. Any repetition
+   of the same key with a scalar in either form, or with a heading
+   form, is a structured error. */
+static int
+set_scalar_field(PyObject *obj, PyObject *kinds, PyObject *key,
+                 PyObject *value, int line, int is_heading)
+{
+    PyObject *new_kind = is_heading ? K_SCALAR_HEADING : K_SCALAR_BARE;
+    PyObject *existing_kind = PyDict_GetItem(kinds, key);  /* borrowed */
+    if (!existing_kind) {
+        if (PyDict_SetItem(obj, key, value) < 0) return -1;
+        return PyDict_SetItem(kinds, key, new_kind);
+    }
+    if (existing_kind == K_ARRAY_SIGIL) {
+        return raise_jmd_parse_error("sigil_conflict", line, key,
+                                     existing_kind, new_kind);
+    }
+    /* object / promoted / scalar: all collapse to repeated_scalar_key. */
+    return raise_jmd_parse_error("repeated_scalar_key", line, key,
+                                 existing_kind, new_kind);
+}
+
 static unsigned int
 key_hash(const char *s, Py_ssize_t len)
 {
@@ -538,7 +700,8 @@ typedef struct {
 /* Forward declarations */
 static PyObject *parse_object_body(ParserState *st, int depth);
 static PyObject *parse_array_body(ParserState *st, int depth);
-static int parse_heading_into(ParserState *st, PyObject *obj, int depth);
+static int parse_heading_into(ParserState *st, PyObject *obj,
+                              PyObject *kinds, int depth);
 static PyObject *parse_item_object(ParserState *st, int array_depth,
                                     PyObject *initial);
 
@@ -596,9 +759,10 @@ parse_blockquote(ParserState *st)
         return PyUnicode_FromStringAndSize("", 0);
     }
 
-    /* Strip leading/trailing empty parts (equivalent to .strip("\n")) */
+    /* D13: only trim trailing empty parts (rstrip "\n"). Leading empty
+       parts are part of the value — they encode a leading newline, which
+       must round-trip losslessly. */
     Py_ssize_t start = 0, end = nparts;
-    while (start < end && part_lens[start] == 0) start++;
     while (end > start && part_lens[end - 1] == 0) end--;
 
     if (start >= end) {
@@ -628,6 +792,116 @@ parse_blockquote(ParserState *st)
     }
 
     PyObject *result = PyUnicode_FromStringAndSize(buf, total_len);
+    PyMem_Free(buf);
+    return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* YAML-style block scalar (§5.2): ``key: |`` (literal) and             */
+/* ``key: >`` (folded). Mirrors the pure-Python parse_block_scalar_from */
+/* in jmd/_parser.py — parser-tolerant alternative to the blockquote    */
+/* form. Consumes consecutive lines indented by ≥2 spaces from the      */
+/* current position; the first indented line's width sets the strip.    */
+/* ------------------------------------------------------------------ */
+
+static PyObject *
+parse_block_scalar(ParserState *st, int folded)
+{
+    /* Collect stripped line parts (-1 sentinel for in-block blank). */
+    const char *parts[256];
+    Py_ssize_t  part_lens[256];
+    Py_ssize_t  nparts = 0;
+    Py_ssize_t  indent_strip = -1;
+
+    while (st->pos < st->lines->len) {
+        JMDLine *line = &st->lines->items[st->pos];
+        if (line->heading_depth == -1) {
+            /* Blank line within block: paragraph separator marker. */
+            if (nparts < 256) {
+                parts[nparts] = "";
+                part_lens[nparts] = 0;
+                nparts++;
+            }
+            st->pos++;
+            continue;
+        }
+        const char *raw = line->raw;
+        Py_ssize_t raw_len = line->raw_len;
+        if (raw_len == 0 || raw[0] != ' ')
+            break;
+        /* Count leading spaces. */
+        Py_ssize_t actual_indent = 0;
+        while (actual_indent < raw_len && raw[actual_indent] == ' ')
+            actual_indent++;
+        if (actual_indent < 2)
+            break;
+        if (indent_strip < 0)
+            indent_strip = actual_indent;
+        if (actual_indent < indent_strip)
+            break;
+        if (nparts < 256) {
+            parts[nparts] = raw + indent_strip;
+            part_lens[nparts] = raw_len - indent_strip;
+            nparts++;
+        }
+        st->pos++;
+    }
+
+    /* Drop trailing blank parts (§5.2 chomp). */
+    while (nparts > 0 && part_lens[nparts - 1] == 0)
+        nparts--;
+
+    if (nparts == 0)
+        return PyUnicode_FromStringAndSize("", 0);
+
+    if (!folded) {
+        /* Literal mode: join with newlines. */
+        Py_ssize_t total = 0;
+        for (Py_ssize_t i = 0; i < nparts; i++) {
+            total += part_lens[i];
+            if (i < nparts - 1) total++;
+        }
+        char *buf = (char *)PyMem_Malloc((size_t)total);
+        if (!buf) { PyErr_NoMemory(); return NULL; }
+        Py_ssize_t off = 0;
+        for (Py_ssize_t i = 0; i < nparts; i++) {
+            if (part_lens[i] > 0) {
+                memcpy(buf + off, parts[i], (size_t)part_lens[i]);
+                off += part_lens[i];
+            }
+            if (i < nparts - 1) buf[off++] = '\n';
+        }
+        PyObject *result = PyUnicode_FromStringAndSize(buf, total);
+        PyMem_Free(buf);
+        return result;
+    }
+
+    /* Folded mode: non-blank consecutive lines folded with spaces;
+       each in-block blank line becomes one '\n'.  Worst-case output
+       size is bounded by sum(part_lens) + nparts (separators). */
+    Py_ssize_t cap = 0;
+    for (Py_ssize_t i = 0; i < nparts; i++)
+        cap += part_lens[i] + 1;
+    char *buf = (char *)PyMem_Malloc((size_t)cap > 0 ? (size_t)cap : 1);
+    if (!buf) { PyErr_NoMemory(); return NULL; }
+    Py_ssize_t off = 0;
+    int para_open = 0;  /* a non-blank line is currently being collected */
+    for (Py_ssize_t i = 0; i < nparts; i++) {
+        if (part_lens[i] == 0) {
+            /* Blank line: close paragraph, emit \n separator. */
+            para_open = 0;
+            buf[off++] = '\n';
+            continue;
+        }
+        if (para_open) {
+            /* Continue paragraph: fold previous line break to a space. */
+            buf[off++] = ' ';
+        }
+        memcpy(buf + off, parts[i], (size_t)part_lens[i]);
+        off += part_lens[i];
+        para_open = 1;
+    }
+    PyObject *result = PyUnicode_FromStringAndSize(buf, off);
     PyMem_Free(buf);
     return result;
 }
@@ -683,6 +957,10 @@ parse_object_body(ParserState *st, int depth)
 {
     PyObject *obj = PyDict_New();
     if (!obj) return NULL;
+    /* §7.4 per-scope kinds tracker: maps key → kind string singleton.
+       Detached lifetime — released at function exit. */
+    PyObject *kinds = PyDict_New();
+    if (!kinds) { Py_DECREF(obj); return NULL; }
 
     LineArray *lines = st->lines;
     Py_ssize_t lines_len = lines->len;
@@ -720,7 +998,8 @@ parse_object_body(ParserState *st, int depth)
         /* Heading at depth+1: child scope */
         if (hd == depth_plus_1) {
             st->pos = pos;
-            if (parse_heading_into(st, obj, depth_plus_1) < 0) {
+            if (parse_heading_into(st, obj, kinds, depth_plus_1) < 0) {
+                Py_DECREF(kinds);
                 Py_DECREF(obj);
                 return NULL;
             }
@@ -737,7 +1016,7 @@ parse_object_body(ParserState *st, int depth)
 
         if (colon_pos >= 0) {
             PyObject *key = parse_key(content, colon_pos);
-            if (!key) { Py_DECREF(obj); return NULL; }
+            if (!key) { Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
 
             const char *val_str = content + colon_pos + 2;
             Py_ssize_t val_len = content_len - colon_pos - 2;
@@ -748,10 +1027,11 @@ parse_object_body(ParserState *st, int depth)
                 st->pos = pos;
                 if (next_is_blockquote(st)) {
                     PyObject *val = parse_blockquote(st);
-                    if (!val) { Py_DECREF(key); Py_DECREF(obj); return NULL; }
-                    if (PyDict_SetItem(obj, key, val) < 0) {
+                    if (!val) { Py_DECREF(key); Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
+                    if (set_scalar_field(obj, kinds, key, val, line->number, 0) < 0) {
                         Py_DECREF(val);
                         Py_DECREF(key);
+                        Py_DECREF(kinds);
                         Py_DECREF(obj);
                         return NULL;
                     }
@@ -759,26 +1039,40 @@ parse_object_body(ParserState *st, int depth)
                     pos = st->pos;
                 } else {
                     PyObject *val = PyUnicode_FromStringAndSize("", 0);
-                    if (!val) { Py_DECREF(key); Py_DECREF(obj); return NULL; }
-                    if (PyDict_SetItem(obj, key, val) < 0) {
+                    if (!val) { Py_DECREF(key); Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
+                    if (set_scalar_field(obj, kinds, key, val, line->number, 0) < 0) {
                         Py_DECREF(val);
                         Py_DECREF(key);
+                        Py_DECREF(kinds);
                         Py_DECREF(obj);
                         return NULL;
                     }
                     Py_DECREF(val);
                 }
             } else {
-                PyObject *val = parse_scalar(val_str, val_len);
-                if (!val) { Py_DECREF(key); Py_DECREF(obj); return NULL; }
-                if (PyDict_SetItem(obj, key, val) < 0) {
+                /* §5.2: ``key: |`` (literal) and ``key: >`` (folded)
+                   open a YAML-style block scalar at the next line. */
+                PyObject *val;
+                if (val_len == 1 && (val_str[0] == '|' || val_str[0] == '>')) {
+                    int folded = (val_str[0] == '>');
+                    pos++;
+                    st->pos = pos;
+                    val = parse_block_scalar(st, folded);
+                    if (!val) { Py_DECREF(key); Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
+                    pos = st->pos;
+                } else {
+                    val = parse_scalar(val_str, val_len);
+                    if (!val) { Py_DECREF(key); Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
+                    pos++;
+                }
+                if (set_scalar_field(obj, kinds, key, val, line->number, 0) < 0) {
                     Py_DECREF(val);
                     Py_DECREF(key);
+                    Py_DECREF(kinds);
                     Py_DECREF(obj);
                     return NULL;
                 }
                 Py_DECREF(val);
-                pos++;
             }
             Py_DECREF(key);
             continue;
@@ -787,15 +1081,16 @@ parse_object_body(ParserState *st, int depth)
         /* key: (colon at end of line, no space after) — check for blockquote */
         if (content_len > 0 && content[content_len - 1] == ':') {
             PyObject *key = parse_key(content, content_len - 1);
-            if (!key) { Py_DECREF(obj); return NULL; }
+            if (!key) { Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
             pos++;
             st->pos = pos;
             if (next_is_blockquote(st)) {
                 PyObject *val = parse_blockquote(st);
-                if (!val) { Py_DECREF(key); Py_DECREF(obj); return NULL; }
-                if (PyDict_SetItem(obj, key, val) < 0) {
+                if (!val) { Py_DECREF(key); Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
+                if (set_scalar_field(obj, kinds, key, val, line->number, 0) < 0) {
                     Py_DECREF(val);
                     Py_DECREF(key);
+                    Py_DECREF(kinds);
                     Py_DECREF(obj);
                     return NULL;
                 }
@@ -803,10 +1098,11 @@ parse_object_body(ParserState *st, int depth)
                 pos = st->pos;
             } else {
                 PyObject *val = PyUnicode_FromStringAndSize("", 0);
-                if (!val) { Py_DECREF(key); Py_DECREF(obj); return NULL; }
-                if (PyDict_SetItem(obj, key, val) < 0) {
+                if (!val) { Py_DECREF(key); Py_DECREF(kinds); Py_DECREF(obj); return NULL; }
+                if (set_scalar_field(obj, kinds, key, val, line->number, 0) < 0) {
                     Py_DECREF(val);
                     Py_DECREF(key);
+                    Py_DECREF(kinds);
                     Py_DECREF(obj);
                     return NULL;
                 }
@@ -821,6 +1117,7 @@ parse_object_body(ParserState *st, int depth)
     }
 
     st->pos = pos;
+    Py_DECREF(kinds);
     return obj;
 }
 
@@ -829,7 +1126,7 @@ parse_object_body(ParserState *st, int depth)
 /* ------------------------------------------------------------------ */
 
 static int
-parse_heading_into(ParserState *st, PyObject *obj, int depth)
+parse_heading_into(ParserState *st, PyObject *obj, PyObject *kinds, int depth)
 {
     if (st->pos >= st->lines->len)
         return 0;
@@ -837,6 +1134,7 @@ parse_heading_into(ParserState *st, PyObject *obj, int depth)
     JMDLine *line = &st->lines->items[st->pos];
     const char *content = line->content;
     Py_ssize_t content_len = line->content_len;
+    int line_no = line->number;
 
     /* Depth-qualified array item: ## - */
     if (content_len == 1 && content[0] == '-')
@@ -848,7 +1146,7 @@ parse_heading_into(ParserState *st, PyObject *obj, int depth)
 
     st->pos++;
 
-    /* Array heading: ## key[] */
+    /* Array heading: ## key[] (§7.4: array-sigil — record kind) */
     if (content_len >= 3 && content[content_len - 2] == '['
         && content[content_len - 1] == ']')
     {
@@ -856,10 +1154,10 @@ parse_heading_into(ParserState *st, PyObject *obj, int depth)
         if (!key) return -1;
         PyObject *arr = parse_array_body(st, depth);
         if (!arr) { Py_DECREF(key); return -1; }
-        int rc = PyDict_SetItem(obj, key, arr);
+        int rc = set_array_sigil_heading(obj, kinds, key, arr, line_no);
         Py_DECREF(key);
         Py_DECREF(arr);
-        return rc < 0 ? -1 : 0;
+        return rc;
     }
 
     /* Scalar heading: ## key: value — use memchr */
@@ -874,25 +1172,33 @@ parse_heading_into(ParserState *st, PyObject *obj, int depth)
             if (next_is_blockquote(st)) {
                 PyObject *val = parse_blockquote(st);
                 if (!val) { Py_DECREF(key); return -1; }
-                int rc = PyDict_SetItem(obj, key, val);
+                int rc = set_scalar_field(obj, kinds, key, val, line_no, 1);
                 Py_DECREF(key);
                 Py_DECREF(val);
-                return rc < 0 ? -1 : 0;
+                return rc;
             } else {
                 PyObject *val = PyUnicode_FromStringAndSize("", 0);
                 if (!val) { Py_DECREF(key); return -1; }
-                int rc = PyDict_SetItem(obj, key, val);
+                int rc = set_scalar_field(obj, kinds, key, val, line_no, 1);
                 Py_DECREF(key);
                 Py_DECREF(val);
-                return rc < 0 ? -1 : 0;
+                return rc;
             }
         } else {
-            PyObject *val = parse_scalar(content + colon_pos + 2, val_len);
+            /* §5.2: ``## key: |`` and ``## key: >`` open a block scalar. */
+            const char *val_str = content + colon_pos + 2;
+            PyObject *val;
+            if (val_len == 1 && (val_str[0] == '|' || val_str[0] == '>')) {
+                int folded = (val_str[0] == '>');
+                val = parse_block_scalar(st, folded);
+            } else {
+                val = parse_scalar(val_str, val_len);
+            }
             if (!val) { Py_DECREF(key); return -1; }
-            int rc = PyDict_SetItem(obj, key, val);
+            int rc = set_scalar_field(obj, kinds, key, val, line_no, 1);
             Py_DECREF(key);
             Py_DECREF(val);
-            return rc < 0 ? -1 : 0;
+            return rc;
         }
     }
 
@@ -904,29 +1210,29 @@ parse_heading_into(ParserState *st, PyObject *obj, int depth)
         if (next_is_blockquote(st)) {
             PyObject *val = parse_blockquote(st);
             if (!val) { Py_DECREF(key); return -1; }
-            int rc = PyDict_SetItem(obj, key, val);
+            int rc = set_scalar_field(obj, kinds, key, val, line_no, 1);
             Py_DECREF(key);
             Py_DECREF(val);
-            return rc < 0 ? -1 : 0;
+            return rc;
         } else {
             PyObject *val = PyUnicode_FromStringAndSize("", 0);
             if (!val) { Py_DECREF(key); return -1; }
-            int rc = PyDict_SetItem(obj, key, val);
+            int rc = set_scalar_field(obj, kinds, key, val, line_no, 1);
             Py_DECREF(key);
             Py_DECREF(val);
-            return rc < 0 ? -1 : 0;
+            return rc;
         }
     }
 
-    /* Object heading: ## key */
+    /* Object heading: ## key (§7.4: object — record kind, promote on repeat) */
     PyObject *key = parse_key(content, content_len);
     if (!key) return -1;
     PyObject *child = parse_object_body(st, depth);
     if (!child) { Py_DECREF(key); return -1; }
-    int rc = PyDict_SetItem(obj, key, child);
+    int rc = set_object_heading(obj, kinds, key, child, line_no);
     Py_DECREF(key);
     Py_DECREF(child);
-    return rc < 0 ? -1 : 0;
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1228,6 +1534,19 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
         obj = PyDict_New();
     }
     if (!obj) return NULL;
+    /* §7.4 per-item kinds tracker; pre-populate from initial so repeated
+       keys (across initial + subsequent bare fields) are detected. */
+    PyObject *kinds = PyDict_New();
+    if (!kinds) { Py_DECREF(obj); return NULL; }
+    if (initial) {
+        PyObject *k, *v;
+        Py_ssize_t i = 0;
+        while (PyDict_Next(initial, &i, &k, &v)) {
+            if (PyDict_SetItem(kinds, k, K_SCALAR_BARE) < 0) {
+                Py_DECREF(kinds); Py_DECREF(obj); return NULL;
+            }
+        }
+    }
 
     int child_depth = array_depth + 1;
     LineArray *lines = st->lines;
@@ -1266,12 +1585,15 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
                     if (!k || !v) {
                         Py_XDECREF(k);
                         Py_XDECREF(v);
+                        Py_DECREF(kinds);
                         Py_DECREF(obj);
                         return NULL;
                     }
-                    if (PyDict_SetItem(obj, k, v) < 0) {
+                    if (set_scalar_field(obj, kinds, k, v,
+                                         line->number, 0) < 0) {
                         Py_DECREF(k);
                         Py_DECREF(v);
+                        Py_DECREF(kinds);
                         Py_DECREF(obj);
                         return NULL;
                     }
@@ -1361,7 +1683,8 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
                 break;
             }
             st->pos = pos;
-            if (parse_heading_into(st, obj, child_depth) < 0) {
+            if (parse_heading_into(st, obj, kinds, child_depth) < 0) {
+                Py_DECREF(kinds);
                 Py_DECREF(obj);
                 return NULL;
             }
@@ -1395,12 +1718,14 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
                 if (!k || !v) {
                     Py_XDECREF(k);
                     Py_XDECREF(v);
+                    Py_DECREF(kinds);
                     Py_DECREF(obj);
                     return NULL;
                 }
-                if (PyDict_SetItem(obj, k, v) < 0) {
+                if (set_scalar_field(obj, kinds, k, v, line->number, 0) < 0) {
                     Py_DECREF(k);
                     Py_DECREF(v);
+                    Py_DECREF(kinds);
                     Py_DECREF(obj);
                     return NULL;
                 }
@@ -1415,6 +1740,7 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
     }
 
     st->pos = pos;
+    Py_DECREF(kinds);
     return obj;
 }
 
@@ -1525,5 +1851,18 @@ PyInit__cparser(void)
 {
     /* Clear key cache */
     memset(key_cache, 0, sizeof(key_cache));
+
+    /* §7.4 kind singletons (interned, pointer-comparison-friendly). */
+    K_OBJECT          = PyUnicode_InternFromString("object");
+    K_ARRAY_SIGIL     = PyUnicode_InternFromString("array_sigil");
+    K_ARRAY_PROMOTED  = PyUnicode_InternFromString("array_promoted");
+    K_SCALAR_BARE     = PyUnicode_InternFromString("scalar_bare");
+    K_SCALAR_HEADING  = PyUnicode_InternFromString("scalar_heading");
+    if (!K_OBJECT || !K_ARRAY_SIGIL || !K_ARRAY_PROMOTED
+        || !K_SCALAR_BARE || !K_SCALAR_HEADING)
+    {
+        return NULL;
+    }
+
     return PyModule_Create(&cparser_module);
 }

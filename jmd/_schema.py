@@ -10,7 +10,7 @@ from dataclasses import field as dc_field
 from typing import Any, cast
 
 from ._parser import _is_indent_field, _is_object_item_content
-from ._scalars import parse_key, parse_scalar, quote_key
+from ._scalars import parse_key, parse_scalar, quote_key, split_kv
 from ._tokenizer import Line, tokenize
 
 
@@ -251,8 +251,9 @@ class JMDSchemaParser:
             if line.heading_depth == -1:
                 self._pos += 1
                 continue
-            if ": " in line.content:
-                key_part, _, val_part = line.content.partition(": ")
+            kv = split_kv(line.content) if line.content else None
+            if kv is not None:
+                key_part, val_part = kv
                 self.frontmatter[parse_key(key_part)] = parse_scalar(val_part)
             elif line.content and not line.content.startswith(("- ", ">")):
                 self.frontmatter[parse_key(line.content)] = True
@@ -299,32 +300,34 @@ class JMDSchemaParser:
                 self._advance()
                 content = line.content
 
-                # Array with type: key[]: type
-                if "[]: " in content:
-                    key_part, _, type_part = content.partition("[]: ")
-                    key = parse_key(key_part)
-                    (base_type, optional, _ro,
-                     _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
-                    if base_type == "object":
-                        item_fields = self._parse_schema_dash_item()
-                        fields.append(SchemaArray(
-                            key=key, item_type="object",
-                            item_fields=item_fields, optional=optional,
-                        ))
+                # key[]: type → array field; key: type → scalar/ref field.
+                # split_kv handles quoted keys with embedded ": " (D10).
+                kv = split_kv(content)
+                if kv is not None:
+                    key_part, type_part = kv
+                    if key_part.endswith("[]"):
+                        key = parse_key(key_part[:-2])
+                        (base_type, optional, _ro,
+                         _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
+                        if base_type == "object":
+                            item_fields = self._parse_schema_dash_item()
+                            fields.append(SchemaArray(
+                                key=key, item_type="object",
+                                item_fields=item_fields, optional=optional,
+                            ))
+                        else:
+                            fields.append(SchemaArray(
+                                key=key, item_type=base_type,
+                                optional=optional,
+                            ))
                     else:
-                        fields.append(SchemaArray(
-                            key=key, item_type=base_type,
-                            optional=optional,
-                        ))
+                        fields.append(
+                            _make_schema_field(
+                                parse_key(key_part), type_part,
+                            )
+                        )
 
-                # Scalar or ref: key: type
-                elif ": " in content:
-                    key_part, _, type_part = content.partition(": ")
-                    fields.append(
-                        _make_schema_field(parse_key(key_part), type_part)
-                    )
-
-                # Object: key
+                # Object: key (no `: ` after the heading label)
                 else:
                     key = parse_key(content)
                     sub_fields = self._parse_schema_body(depth + 1)
@@ -343,24 +346,28 @@ class JMDSchemaParser:
                     fields[-1].item_fields = item_fields
                 continue
 
-            # Bare field: key: type
-            if line.heading_depth == 0 and ": " in line.content:
-                self._advance()
-                if "[]: " in line.content:
-                    key_part, _, type_part = line.content.partition("[]: ")
-                    key = parse_key(key_part)
-                    (base_type, optional, _ro,
-                     _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
-                    fields.append(SchemaArray(
-                        key=key, item_type=base_type,
-                        optional=optional,
-                    ))
-                else:
-                    key_part, _, type_part = line.content.partition(": ")
-                    fields.append(
-                        _make_schema_field(parse_key(key_part), type_part)
-                    )
-                continue
+            # Bare field: key: type (or key[]: type for arrays). D10:
+            # split_kv respects a quoted key containing `": "`.
+            if line.heading_depth == 0:
+                bare_kv = split_kv(line.content)
+                if bare_kv is not None:
+                    key_part, type_part = bare_kv
+                    self._advance()
+                    if key_part.endswith("[]"):
+                        key = parse_key(key_part[:-2])
+                        (base_type, optional, _ro,
+                         _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
+                        fields.append(SchemaArray(
+                            key=key, item_type=base_type,
+                            optional=optional,
+                        ))
+                    else:
+                        fields.append(
+                            _make_schema_field(
+                                parse_key(key_part), type_part,
+                            )
+                        )
+                    continue
 
             break
 
@@ -384,9 +391,11 @@ class JMDSchemaParser:
             content_after = line.content[2:]
             if _is_object_item_content(content_after):
                 self._advance()
-                # First field
-                kp, _, tp = content_after.partition(": ")
-                item_fields.append(_make_schema_field(parse_key(kp), tp))
+                # First field (D10: split_kv respects quoted keys with `: `)
+                first_kv = split_kv(content_after)
+                if first_kv is not None:
+                    kp, tp = first_kv
+                    item_fields.append(_make_schema_field(parse_key(kp), tp))
                 # Indented continuation fields
                 while self._pos < len(self._lines):
                     nxt = self._lines[self._pos]
@@ -416,10 +425,11 @@ class JMDSchemaParser:
             if line.heading_depth == -1:
                 self._advance()
                 continue
-            if ": " not in line.content:
+            bare_kv = split_kv(line.content)
+            if bare_kv is None:
                 break
             self._advance()
-            key_part, _, type_part = line.content.partition(": ")
+            key_part, type_part = bare_kv
             fields.append(_make_schema_field(parse_key(key_part), type_part))
         return fields
 

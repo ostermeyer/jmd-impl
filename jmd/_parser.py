@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ._scalars import parse_key, parse_scalar
+from ._scalars import parse_key, parse_scalar, split_kv
 from ._tokenizer import Line, is_thematic_break, tokenize
 
 try:
@@ -150,7 +150,7 @@ def _is_indent_field(raw_text: str) -> tuple[bool, str, str] | None:
         return None
     stripped = raw_text.lstrip(' ')
     if _kv_match(stripped):
-        key_part, _, val_part = stripped.partition(": ")
+        key_part, val_part = split_kv(stripped) or (stripped, "")
         return True, key_part, val_part
     return None
 
@@ -367,7 +367,8 @@ class JMDParser:
                 continue
             # Parse key: value
             if ": " in line.content:
-                key_part, _, val_part = line.content.partition(": ")
+                kv = split_kv(line.content) or (line.content, "")
+                key_part, val_part = kv
                 self.frontmatter[parse_key(key_part)] = parse_scalar(val_part)
                 self._advance()
                 continue
@@ -477,7 +478,7 @@ class JMDParser:
 
             # Bare field: key: value (or key: with blockquote)
             if ": " in content:
-                key_part, _, val_part = content.partition(": ")
+                key_part, val_part = split_kv(content) or (content, "")
                 key = parse_key(key_part)
                 if val_part == "":
                     # Check for blockquote multiline
@@ -567,7 +568,7 @@ class JMDParser:
 
         # Scalar heading: ## key: value
         if ": " in content:
-            key_part, _, val_part = content.partition(": ")
+            key_part, val_part = split_kv(content) or (content, "")
             key = parse_key(key_part)
             if val_part == "":
                 # Check for blockquote
@@ -673,7 +674,8 @@ class JMDParser:
                     if _kv_match(content_after):
                         pos += 1
                         self._pos = pos
-                        key_part, _, val_part = content_after.partition(": ")
+                        kv = split_kv(content_after) or (content_after, "")
+                        key_part, val_part = kv
                         initial = {parse_key(key_part): parse_scalar(val_part)}
                         items_append(self._parse_item_object(
                             depth, initial_fields=initial))
@@ -703,7 +705,8 @@ class JMDParser:
                 if _kv_match(content_after):
                     pos += 1
                     self._pos = pos
-                    key_part, _, val_part = content_after.partition(": ")
+                    kv = split_kv(content_after) or (content_after, "")
+                    key_part, val_part = kv
                     initial = {parse_key(key_part): parse_scalar(val_part)}
                     items_append(self._parse_item_object(
                         depth, initial_fields=initial))
@@ -734,7 +737,8 @@ class JMDParser:
                     # Object item with first field
                     pos += 1
                     self._pos = pos
-                    key_part, _, val_part = content_after.partition(": ")
+                    kv = split_kv(content_after) or (content_after, "")
+                    key_part, val_part = kv
                     initial = {parse_key(key_part): parse_scalar(val_part)}
                     items_append(self._parse_item_object(
                         depth, initial_fields=initial))
@@ -796,7 +800,8 @@ class JMDParser:
                 if raw and raw[0] == ' ' and len(raw) >= 3 and raw[1] == ' ':
                     stripped = raw.lstrip(' ')
                     if _kv_match(stripped):
-                        key_part, _, val_part = stripped.partition(": ")
+                        kv = split_kv(stripped) or (stripped, "")
+                        key_part, val_part = kv
                         self._set_scalar(
                             obj, kinds, parse_key(key_part),
                             parse_scalar(val_part),
@@ -880,7 +885,7 @@ class JMDParser:
 
                 # Bare field: key: value
                 if ": " in content:
-                    key_part, _, val_part = content.partition(": ")
+                    key_part, val_part = split_kv(content) or (content, "")
                     self._set_scalar(
                         obj, kinds, parse_key(key_part),
                         parse_scalar(val_part),
