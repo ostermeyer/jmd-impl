@@ -1,7 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for streaming parser — event sequences (spec § 18)."""
 
+import asyncio
+from collections.abc import AsyncIterator
+from typing import Any
+
+import jmd
 from jmd import StreamEvent, jmd_stream
+from jmd._streaming import (
+    JMDStreamParser,
+    to_lines,
+)
+from jmd._streaming import (
+    events as async_stream_events,
+)
 
 
 def events(source: str) -> list[StreamEvent]:
@@ -98,3 +110,143 @@ class TestStreamingPartialDocs:
         )
         first_field = next(e for e in evs if e.type == "FIELD")
         assert first_field.key == "id"
+
+
+# ---------------------------------------------------------------------------
+# Slice B — push-style streaming API (createParser parity with jmd-js)
+# ---------------------------------------------------------------------------
+
+
+class TestStreamFrontmatter:
+    """B.1: frontmatter as FRONTMATTER events before DOCUMENT_START."""
+
+    def test_simple_frontmatter(self) -> None:
+        """Test that key: value frontmatter emits FRONTMATTER events."""
+        src = "confidence: high\nsource: ledger\n\n# Order\nid: 42\n"
+        evs = list(jmd.jmd_stream(src))
+        fm = [e for e in evs if e.type == "FRONTMATTER"]
+        assert [(e.key, e.value) for e in fm] == [
+            ("confidence", "high"),
+            ("source", "ledger"),
+        ]
+
+    def test_dash_markers_tolerated(self) -> None:
+        """Test §3.5.1: --- markers around frontmatter are consumed."""
+        src = "---\nconfidence: high\n---\n\n# Order\nid: 42\n"
+        evs = list(jmd.jmd_stream(src))
+        fm = [e for e in evs if e.type == "FRONTMATTER"]
+        assert [(e.key, e.value) for e in fm] == [("confidence", "high")]
+
+    def test_multiline_frontmatter(self) -> None:
+        """Test D12: multi-line frontmatter values via key: + blockquote."""
+        src = "summary:\n> line one\n> line two\n\n# Doc\nx: 1\n"
+        evs = list(jmd.jmd_stream(src))
+        fm = [e for e in evs if e.type == "FRONTMATTER"]
+        assert fm and fm[0].key == "summary"
+        assert fm[0].value == "line one\nline two"
+
+
+class TestJMDStreamParser:
+    """B.2: class-based push API mirrors jmd-js createParser()."""
+
+    def test_class_events_helper(self) -> None:
+        """Test JMDStreamParser.events over an iterable of lines."""
+        evs = list(JMDStreamParser.events(["# Order", "id: 42"]))
+        types = [e.type for e in evs]
+        assert types == ["DOCUMENT_START", "FIELD", "DOCUMENT_END"]
+
+    def test_process_line_finish(self) -> None:
+        """Test push API: process_line accumulates, finish drains."""
+        p = JMDStreamParser()
+        assert p.process_line("# Doc") == []
+        assert p.process_line("x: 1") == []
+        evs = p.finish()
+        types = [e.type for e in evs]
+        assert types == ["DOCUMENT_START", "FIELD", "DOCUMENT_END"]
+
+    def test_finish_idempotent(self) -> None:
+        """Test that a second finish() call returns []."""
+        p = JMDStreamParser()
+        p.process_line("# Doc")
+        p.finish()
+        assert p.finish() == []
+
+    def test_process_after_finish_raises(self) -> None:
+        """Test that process_line after finish() raises RuntimeError."""
+        p = JMDStreamParser()
+        p.finish()
+        try:
+            p.process_line("# Late")
+        except RuntimeError:
+            return
+        raise AssertionError("expected RuntimeError")
+
+
+class TestAsyncStreamingAPI:
+    """B.3: async events() + to_lines() match jmd-js's async pair."""
+
+    def test_to_lines_splits_chunks(self) -> None:
+        """Test that to_lines splits an async iterable of arbitrary chunks."""
+        async def chunks() -> AsyncIterator[str]:
+            yield "# As"
+            yield "ync\nid: "
+            yield "9\n"
+
+        async def go() -> list[str]:
+            return [line async for line in to_lines(chunks())]
+
+        assert asyncio.run(go()) == ["# Async", "id: 9"]
+
+    def test_to_lines_yields_trailing_unterminated(self) -> None:
+        """Test that to_lines emits the final unterminated line."""
+        async def chunks() -> AsyncIterator[str]:
+            yield "a\nb"
+
+        async def go() -> list[str]:
+            return [line async for line in to_lines(chunks())]
+
+        assert asyncio.run(go()) == ["a", "b"]
+
+    def test_to_lines_strips_carriage_return(self) -> None:
+        r"""Test that to_lines strips trailing \r from lines."""
+        async def chunks() -> AsyncIterator[str]:
+            yield "a\r\nb\r\n"
+
+        async def go() -> list[str]:
+            return [line async for line in to_lines(chunks())]
+
+        assert asyncio.run(go()) == ["a", "b"]
+
+    def test_async_events_pipeline(self) -> None:
+        """Test that async events() reads from an async line source."""
+        async def lines() -> AsyncIterator[str]:
+            for ln in ["# Doc", "id: 7"]:
+                yield ln
+
+        async def go() -> list[tuple[Any, ...]]:
+            return [
+                (e.type, e.key, e.value)
+                async for e in async_stream_events(lines())
+            ]
+
+        result = asyncio.run(go())
+        assert result == [
+            ("DOCUMENT_START", "Doc", None),
+            ("FIELD", "id", 7),
+            ("DOCUMENT_END", None, None),
+        ]
+
+    def test_async_pipeline_end_to_end(self) -> None:
+        """Test to_lines + async events composed over byte chunks."""
+        async def chunks() -> AsyncIterator[bytes]:
+            yield b"# Doc\nid: "
+            yield b"42\n"
+
+        async def go() -> list[tuple[Any, ...]]:
+            return [
+                (e.type, e.key, e.value)
+                async for e in async_stream_events(to_lines(chunks()))
+            ]
+
+        result = asyncio.run(go())
+        assert ("FIELD", "id", 42) in result

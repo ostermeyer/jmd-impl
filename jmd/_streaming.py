@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import AsyncIterable, AsyncIterator, Generator, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -124,7 +124,65 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
             elif stype == "array":
                 yield StreamEvent("ARRAY_END", key=skey)
 
-    first = lines[0]
+    # Frontmatter: any lines before the first heading. Emits FRONTMATTER
+    # events with key + value (str / bool / scalar). §3.5.1 tolerates
+    # stray ``---`` markers (3+ hyphens) before and after the block.
+    # Multi-line values (D12) follow as ``key:`` + blockquote.
+    fi = 0
+    while fi < len(lines):
+        fline = lines[fi]
+        if fline.heading_depth > 0:
+            break
+        if fline.heading_depth == -1:
+            fi += 1
+            continue
+        # §3.5.1: ``---`` (or more) is decorative noise around frontmatter.
+        if is_thematic_break(fline):
+            fi += 1
+            continue
+        content = fline.content
+        if ": " in content:
+            key_part, _, val_part = content.partition(": ")
+            yield StreamEvent(
+                "FRONTMATTER", key=parse_key(key_part),
+                value=parse_scalar(val_part),
+            )
+            fi += 1
+            continue
+        if content.endswith(":") and ": " not in content:
+            # D12: key: (no value) followed by blockquote multi-line value
+            key = parse_key(content[:-1])
+            fi += 1
+            # Consume the blockquote lines
+            parts: list[str] = []
+            while fi < len(lines):
+                nxt = lines[fi]
+                if nxt.heading_depth != 0:
+                    break
+                raw = nxt.raw_text.strip()
+                if raw == ">":
+                    parts.append("")
+                    fi += 1
+                elif raw.startswith("> "):
+                    parts.append(raw[2:])
+                    fi += 1
+                else:
+                    break
+            value = "\n".join(parts).rstrip("\n")
+            yield StreamEvent("FRONTMATTER", key=key, value=value)
+            continue
+        if (content and not content.startswith(">")
+                and not content.startswith("- ")):
+            yield StreamEvent(
+                "FRONTMATTER", key=parse_key(content), value=True,
+            )
+            fi += 1
+            continue
+        break
+    if fi >= len(lines):
+        return
+
+    first = lines[fi]
     if first.heading_depth == 1 and (
         first.content == "[]" or first.content == "- []"
     ):
@@ -144,7 +202,7 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
     else:
         return
 
-    li = 1
+    li = fi + 1
     while li < len(lines):
         line = lines[li]
         li += 1
@@ -456,3 +514,121 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
             yield StreamEvent("ARRAY_END", key=skey)
 
     yield StreamEvent("DOCUMENT_END")
+
+
+# ---------------------------------------------------------------------------
+# Push-style streaming API (matches jmd-js createParser/events/toLines)
+# ---------------------------------------------------------------------------
+
+
+class JMDStreamParser:
+    """Streaming JMD parser with a push API.
+
+    Designed for symmetry with the JavaScript reference (``jmd-js``):
+    callers push lines via :meth:`process_line` and finalize with
+    :meth:`finish` to drain any remaining events. The convenience
+    :meth:`events` accepts an iterable of lines.
+
+    Current implementation buffers all lines and yields events from
+    :meth:`finish`; ``process_line`` returns an empty list. The API
+    is forward-compatible with a future truly-incremental parser
+    (the consumer code does not change). True incremental emission
+    is tracked as a follow-up — Memory ``4d156451`` discusses the
+    architectural tipping points.
+
+    Example::
+
+        parser = JMDStreamParser()
+        parser.process_line("# Order")
+        parser.process_line("id: 42")
+        events = parser.finish()
+    """
+
+    def __init__(self) -> None:
+        self._lines: list[str] = []
+        self._finished: bool = False
+
+    def process_line(self, line: str) -> list[StreamEvent]:
+        """Push one source line (without trailing newline).
+
+        Returns the events that can be emitted now. In the current
+        buffered implementation this is always ``[]``; events are
+        emitted by :meth:`finish`.
+
+        Raises:
+            RuntimeError: If called after :meth:`finish`.
+        """
+        if self._finished:
+            raise RuntimeError("process_line called after finish()")
+        self._lines.append(line)
+        return []
+
+    def finish(self) -> list[StreamEvent]:
+        """Signal end of input and return all remaining events.
+
+        Idempotent: a second call returns ``[]``.
+        """
+        if self._finished:
+            return []
+        self._finished = True
+        return list(jmd_stream("\n".join(self._lines)))
+
+    @staticmethod
+    def events(source: Iterable[str]) -> Generator[StreamEvent, None, None]:
+        """Convenience: iterate events for an iterable of lines.
+
+        Equivalent to feeding each line via :meth:`process_line` and
+        draining :meth:`finish`. Yields events in order.
+        """
+        parser = JMDStreamParser()
+        for line in source:
+            yield from parser.process_line(line)
+        yield from parser.finish()
+
+
+async def to_lines(
+    source: AsyncIterable[str | bytes],
+) -> AsyncIterator[str]:
+    r"""Adapter: async-iterable of str/bytes chunks → async-iterable of lines.
+
+    Splits on ``\n``, strips trailing ``\r``. The final unterminated
+    line is yielded if non-empty. Matches the contract of the jmd-js
+    ``toLines`` helper.
+    """
+    buffer = ""
+    async for chunk in source:
+        if isinstance(chunk, (bytes, bytearray)):
+            chunk = chunk.decode("utf-8")
+        buffer += chunk
+        while True:
+            idx = buffer.find("\n")
+            if idx < 0:
+                break
+            line = buffer[:idx]
+            if line.endswith("\r"):
+                line = line[:-1]
+            yield line
+            buffer = buffer[idx + 1:]
+    if buffer:
+        if buffer.endswith("\r"):
+            buffer = buffer[:-1]
+        yield buffer
+
+
+async def events(
+    source: AsyncIterable[str],
+) -> AsyncIterator[StreamEvent]:
+    """Async events generator over an async-iterable of lines.
+
+    Mirrors jmd-js's ``events(source)``. Buffers internally per
+    :class:`JMDStreamParser` semantics; ``finish`` is implied by
+    end-of-iteration. Returns a sync stream of :class:`StreamEvent`
+    instances, ready for ``async for`` consumption alongside the
+    line source.
+    """
+    parser = JMDStreamParser()
+    async for line in source:
+        for ev in parser.process_line(line):
+            yield ev
+    for ev in parser.finish():
+        yield ev

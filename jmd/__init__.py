@@ -58,7 +58,15 @@ from ._schema import (
     SchemaRef,
 )
 from ._serializer import JMDSerializer, validate_label
-from ._streaming import StreamEvent, jmd_stream
+from ._streaming import (
+    JMDStreamParser,
+    StreamEvent,
+    jmd_stream,
+    to_lines,
+)
+from ._streaming import (
+    events as stream_events,
+)
 from ._tokenizer import Line, tokenize
 
 # ---------------------------------------------------------------------------
@@ -207,6 +215,9 @@ __all__ = [
     # Streaming
     "StreamEvent",
     "jmd_stream",
+    "JMDStreamParser",
+    "stream_events",
+    "to_lines",
     # QBE
     "Condition",
     "QueryField",
