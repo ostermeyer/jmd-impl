@@ -25,9 +25,118 @@ _KV_RE = re.compile(r'^(?:[a-zA-Z0-9_\-]+|"(?:[^"\\]|\\.)*"): ')
 _kv_match = _KV_RE.match
 
 
+# §7.4 — Kind tags for the per-scope sigil lock.
+_K_OBJECT = "object"            # ## key  → {...}
+_K_ARRAY_SIGIL = "array_sigil"  # ## key[] → [...]  (author declared array)
+_K_ARRAY_PROMOTED = "array_promoted"  # promoted from repeated ## key
+_K_SCALAR_BARE = "scalar_bare"  # key: value
+_K_SCALAR_HEADING = "scalar_heading"  # ## key: value
+
+
+class JMDParseError(ValueError):
+    """A structured parse error per JMD spec §7.4.2 and related rules.
+
+    Subclass of :class:`ValueError` for backward compatibility with callers
+    that catch ``ValueError``. Carries structured fields that conforming
+    backends report uniformly (see ``conformance/README.md``):
+
+    Attributes:
+        kind: Error category — one of ``"sigil_conflict"``,
+            ``"repeated_explicit_array"``, ``"repeated_scalar_key"``.
+        line: 1-based source line number of the offending occurrence.
+        key:  The key whose repetition triggered the error.
+        form: Implementation-advisory diagnostic detail with
+            ``"existing"`` and ``"new"`` kind tags.
+    """
+
+    def __init__(
+        self,
+        *,
+        kind: str,
+        line: int,
+        key: str,
+        form: dict[str, str] | None = None,
+        message: str | None = None,
+    ) -> None:
+        self.kind = kind
+        self.line = line
+        self.key = key
+        self.form = form or {}
+        if message is None:
+            message = f"Line {line}: {kind} for key {key!r}"
+        super().__init__(message)
+
+
 def _is_object_item_content(content: str) -> bool:
     """Check if content after '- ' looks like a key: value (object item)."""
     return bool(_kv_match(content))
+
+
+def parse_block_scalar_from(
+    lines: list[Line],
+    pos: int,
+    *,
+    folded: bool,
+) -> tuple[str, int]:
+    """Parse a YAML-style block scalar (§5.2) starting at ``lines[pos]``.
+
+    Consumes consecutive lines indented by at least 2 spaces. The
+    indentation of the first indented line sets the strip width;
+    subsequent lines are stripped by the same width. Blank lines
+    within the block are preserved as paragraph separators.
+
+    Args:
+        lines: Tokenized source lines.
+        pos: Position of the first candidate line (immediately after the
+            ``key: |`` or ``key: >`` opener).
+        folded: If True (``>``), fold consecutive non-blank lines with
+            spaces; each in-block blank line becomes one newline. If
+            False (``|``), preserve newlines.
+
+    Returns:
+        A tuple ``(value, new_pos)``: the decoded string and the position
+        just past the consumed block.
+    """
+    parts: list[str] = []
+    indent_strip: int | None = None
+    while pos < len(lines):
+        line = lines[pos]
+        if line.heading_depth == -1:
+            parts.append("")
+            pos += 1
+            continue
+        raw = line.raw_text
+        if not raw or raw[0] != ' ':
+            break
+        actual_indent = len(raw) - len(raw.lstrip(' '))
+        if actual_indent < 2:
+            break
+        if indent_strip is None:
+            indent_strip = actual_indent
+        if actual_indent < indent_strip:
+            break
+        parts.append(raw[indent_strip:])
+        pos += 1
+    # Drop trailing blank lines (§5.2 chomp behavior).
+    while parts and parts[-1] == "":
+        parts.pop()
+    if not folded:
+        return "\n".join(parts), pos
+    # Folded mode: fold consecutive non-blank lines with spaces; each
+    # in-block blank line becomes one newline.
+    out_pieces: list[str] = []
+    current_para: list[str] = []
+    for part in parts:
+        if part == "":
+            if current_para:
+                out_pieces.append(" ".join(current_para))
+                current_para = []
+            out_pieces.append("\n")
+        else:
+            current_para.append(part)
+    if current_para:
+        out_pieces.append(" ".join(current_para))
+    return "".join(out_pieces), pos
 
 
 def _is_indent_field(raw_text: str) -> tuple[bool, str, str] | None:
@@ -64,6 +173,112 @@ class JMDParser:
         self._lines: list[Line] = []
         self._pos: int = 0
         self.frontmatter: dict[str, Any] = {}
+
+    def _line_no_at(self, pos: int) -> int:
+        """Return the 1-based source line number at parser position."""
+        if 0 <= pos < len(self._lines):
+            return self._lines[pos].number
+        return 0
+
+    def _set_object_heading(
+        self,
+        obj: dict[str, Any],
+        kinds: dict[str, str],
+        key: str,
+        value: dict[str, Any],
+        line: int,
+    ) -> dict[str, Any]:
+        """Apply §7.4 promotion for an object heading ``## key``.
+
+        Returns the dict to fill (either the new dict or the appended one).
+        Raises :class:`JMDParseError` on sigil or scalar conflicts.
+        """
+        existing_kind = kinds.get(key)
+        if existing_kind is None:
+            obj[key] = value
+            kinds[key] = _K_OBJECT
+            return value
+        if existing_kind == _K_OBJECT:
+            obj[key] = [obj[key], value]
+            kinds[key] = _K_ARRAY_PROMOTED
+            return value
+        if existing_kind == _K_ARRAY_PROMOTED:
+            obj[key].append(value)
+            return value
+        if existing_kind == _K_ARRAY_SIGIL:
+            raise JMDParseError(
+                kind="sigil_conflict", line=line, key=key,
+                form={"existing": existing_kind, "new": _K_OBJECT},
+            )
+        # Existing is scalar (bare or heading): mixed-form conflict.
+        raise JMDParseError(
+            kind="repeated_scalar_key", line=line, key=key,
+            form={"existing": existing_kind, "new": _K_OBJECT},
+        )
+
+    def _set_array_sigil(
+        self,
+        obj: dict[str, Any],
+        kinds: dict[str, str],
+        key: str,
+        value: list[Any],
+        line: int,
+    ) -> None:
+        """Apply §7.4 for an explicit array heading ``## key[]``."""
+        existing_kind = kinds.get(key)
+        if existing_kind is None:
+            obj[key] = value
+            kinds[key] = _K_ARRAY_SIGIL
+            return
+        if existing_kind == _K_ARRAY_SIGIL:
+            raise JMDParseError(
+                kind="repeated_explicit_array", line=line, key=key,
+                form={"existing": existing_kind, "new": _K_ARRAY_SIGIL},
+            )
+        if existing_kind in (_K_OBJECT, _K_ARRAY_PROMOTED):
+            raise JMDParseError(
+                kind="sigil_conflict", line=line, key=key,
+                form={"existing": existing_kind, "new": _K_ARRAY_SIGIL},
+            )
+        raise JMDParseError(
+            kind="repeated_scalar_key", line=line, key=key,
+            form={"existing": existing_kind, "new": _K_ARRAY_SIGIL},
+        )
+
+    def _set_scalar(
+        self,
+        obj: dict[str, Any],
+        kinds: dict[str, str],
+        key: str,
+        value: Any,
+        line: int,
+        *,
+        is_heading: bool,
+    ) -> None:
+        """Apply §7.4 for a bare field or scalar heading.
+
+        Any repetition of the same key with a scalar in either form, or
+        with a heading form, is a structured error.
+        """
+        new_kind = _K_SCALAR_HEADING if is_heading else _K_SCALAR_BARE
+        existing_kind = kinds.get(key)
+        if existing_kind is None:
+            obj[key] = value
+            kinds[key] = new_kind
+            return
+        if existing_kind == _K_ARRAY_SIGIL:
+            raise JMDParseError(
+                kind="sigil_conflict", line=line, key=key,
+                form={"existing": existing_kind, "new": new_kind},
+            )
+        # Existing object, promoted array, or scalar: all map to
+        # repeated_scalar_key per the §7.4.2(c) extension we agreed on
+        # 2026-05-13 (mixed-form scalar/object/promoted-array conflicts
+        # are reported under the scalar-key kind).
+        raise JMDParseError(
+            kind="repeated_scalar_key", line=line, key=key,
+            form={"existing": existing_kind, "new": new_kind},
+        )
 
     def parse(self, source: str) -> Any:
         """Parse a JMD document string into a Python value.
@@ -129,7 +344,14 @@ class JMDParser:
         return ""
 
     def _parse_frontmatter(self) -> None:
-        """Parse frontmatter fields before the first heading."""
+        """Parse frontmatter fields before the first heading.
+
+        Per §3.5.1, lines of three or more hyphens (``---``, ``----``, ...)
+        around the frontmatter block are tolerated as decorative noise — a
+        reflex inherited from YAML-prefixed Markdown ecosystems. They are
+        consumed without semantic effect, both before any frontmatter field
+        and between the last field and the root heading.
+        """
         while self._pos < len(self._lines):
             line = self._lines[self._pos]
             # Stop at first heading
@@ -139,11 +361,27 @@ class JMDParser:
             if line.heading_depth == -1:
                 self._advance()
                 continue
+            # §3.5.1: tolerate stray --- markers around the frontmatter.
+            if is_thematic_break(line):
+                self._advance()
+                continue
             # Parse key: value
             if ": " in line.content:
                 key_part, _, val_part = line.content.partition(": ")
                 self.frontmatter[parse_key(key_part)] = parse_scalar(val_part)
                 self._advance()
+                continue
+            # key: (trailing colon, no value) — multi-line blockquote
+            # value follows (D12 round-trip for multi-line frontmatter).
+            if line.content.endswith(":") and ": " not in line.content:
+                key = parse_key(line.content[:-1])
+                self._advance()
+                nxt = self._cur()
+                if (nxt and nxt.heading_depth == 0
+                        and nxt.raw_text.strip().startswith(">")):
+                    self.frontmatter[key] = self._parse_blockquote()
+                else:
+                    self.frontmatter[key] = ""
                 continue
             # Bare key (no value)
             if (line.content
@@ -153,6 +391,18 @@ class JMDParser:
                 self._advance()
                 continue
             break
+
+    def _parse_block_scalar(self, *, folded: bool) -> str:
+        """Parse a YAML-style block scalar (§5.2) at the current position.
+
+        Thin wrapper around the module-level :func:`parse_block_scalar_from`
+        that updates ``self._pos`` and returns just the decoded value.
+        """
+        value, new_pos = parse_block_scalar_from(
+            self._lines, self._pos, folded=folded,
+        )
+        self._pos = new_pos
+        return value
 
     def _parse_blockquote(self) -> str:
         """Parse blockquote lines into a multiline string.
@@ -174,13 +424,17 @@ class JMDParser:
                 self._advance()
             else:
                 break
-        # Join and trim leading/trailing blank lines
+        # Join. Only trim trailing newlines — leading ``>`` lines are
+        # part of the value (D13: leading-newline lossless roundtrip).
         text = "\n".join(parts)
-        return text.strip("\n")
+        return text.rstrip("\n")
 
     def _parse_object_body(self, depth: int) -> dict[str, Any]:
         """Parse fields belonging to an object scope at the given depth."""
         obj: dict[str, Any] = {}
+        # §7.4 sigil lock — tracks per-scope kind tags for conflict detection
+        # and array promotion of repeated headings.
+        kinds: dict[str, str] = {}
         lines = self._lines
         lines_len = len(lines)
         pos = self._pos
@@ -213,12 +467,13 @@ class JMDParser:
             # Heading at depth+1: child scope.
             if hd == depth_plus_1:
                 self._pos = pos
-                self._parse_heading_into(obj, depth_plus_1)
+                self._parse_heading_into(obj, kinds, depth_plus_1)
                 pos = self._pos
                 continue
 
             # Non-heading line (hd == 0)
             content = line.content
+            line_no = line.number
 
             # Bare field: key: value (or key: with blockquote)
             if ": " in content:
@@ -233,13 +488,31 @@ class JMDParser:
                     )
                     if (peek_line and peek_line.heading_depth == 0
                             and peek_line.raw_text.strip().startswith(">")):
-                        obj[key] = self._parse_blockquote()
+                        value: Any = self._parse_blockquote()
                         pos = self._pos
                     else:
-                        obj[key] = ""
+                        value = ""
+                    self._set_scalar(
+                        obj, kinds, key, value, line_no, is_heading=False,
+                    )
                 else:
-                    obj[key] = parse_scalar(val_part)
-                    pos += 1
+                    # §5.2: ``key: |`` (literal) and ``key: >`` (folded)
+                    # open a YAML-style block scalar — parser-tolerant
+                    # alternative to the blockquote form.
+                    if val_part == "|" or val_part == ">":
+                        pos += 1
+                        self._pos = pos
+                        value = self._parse_block_scalar(
+                            folded=(val_part == ">"),
+                        )
+                        pos = self._pos
+                    else:
+                        value = parse_scalar(val_part)
+                        pos += 1
+                    self._set_scalar(
+                        obj, kinds, key, value,
+                        line_no, is_heading=False,
+                    )
                 continue
 
             # key: (colon at end, no space after) — also check for blockquote
@@ -250,10 +523,13 @@ class JMDParser:
                 peek_line = lines[pos] if pos < lines_len else None
                 if (peek_line and peek_line.heading_depth == 0
                         and peek_line.raw_text.strip().startswith(">")):
-                    obj[key] = self._parse_blockquote()
+                    value = self._parse_blockquote()
                     pos = self._pos
                 else:
-                    obj[key] = ""
+                    value = ""
+                self._set_scalar(
+                    obj, kinds, key, value, line_no, is_heading=False,
+                )
                 continue
 
             break
@@ -261,12 +537,15 @@ class JMDParser:
         self._pos = pos
         return obj
 
-    def _parse_heading_into(self, obj: dict[str, Any], depth: int) -> None:
+    def _parse_heading_into(
+        self, obj: dict[str, Any], kinds: dict[str, str], depth: int,
+    ) -> None:
         """Parse a heading line and add its content to the given object."""
         line = self._cur()
         if line is None:
             return
         content = line.content
+        line_no = line.number
 
         # Depth-qualified array item: ## -
         if content == "-":
@@ -281,7 +560,9 @@ class JMDParser:
         # Array heading: ## key[]
         if content.endswith("[]"):
             key = parse_key(content[:-2])
-            obj[key] = self._parse_array_body(depth)
+            self._set_array_sigil(
+                obj, kinds, key, self._parse_array_body(depth), line_no,
+            )
             return
 
         # Scalar heading: ## key: value
@@ -293,11 +574,17 @@ class JMDParser:
                 nxt = self._cur()
                 if (nxt and nxt.heading_depth == 0
                         and nxt.raw_text.strip().startswith(">")):
-                    obj[key] = self._parse_blockquote()
+                    value: Any = self._parse_blockquote()
                 else:
-                    obj[key] = ""
+                    value = ""
+            elif val_part == "|" or val_part == ">":
+                # §5.2 block scalar (literal or folded).
+                value = self._parse_block_scalar(folded=(val_part == ">"))
             else:
-                obj[key] = parse_scalar(val_part)
+                value = parse_scalar(val_part)
+            self._set_scalar(
+                obj, kinds, key, value, line_no, is_heading=True,
+            )
             return
 
         # Scalar heading with trailing colon: ## key:
@@ -306,14 +593,18 @@ class JMDParser:
             nxt = self._cur()
             if (nxt and nxt.heading_depth == 0
                     and nxt.raw_text.strip().startswith(">")):
-                obj[key] = self._parse_blockquote()
+                value = self._parse_blockquote()
             else:
-                obj[key] = ""
+                value = ""
+            self._set_scalar(
+                obj, kinds, key, value, line_no, is_heading=True,
+            )
             return
 
-        # Object heading: ## key
+        # Object heading: ## key — apply promote-to-array on repetition.
         key = parse_key(content)
-        obj[key] = self._parse_object_body(depth)
+        child = self._parse_object_body(depth)
+        self._set_object_heading(obj, kinds, key, child, line_no)
 
     def _parse_array_body(self, depth: int) -> list[Any]:
         """Parse items belonging to an array scope at the given depth."""
@@ -481,6 +772,12 @@ class JMDParser:
         headings at array_depth+1.
         """
         obj: dict[str, Any] = dict(initial_fields) if initial_fields else {}
+        # §7.4 sigil lock for this item's scope. Seed from initial_fields:
+        # the first field on the `- ` line is a bare scalar at item-level.
+        kinds: dict[str, str] = (
+            {k: _K_SCALAR_BARE for k in initial_fields}
+            if initial_fields else {}
+        )
         child_depth = array_depth + 1
         lines = self._lines
         lines_len = len(lines)
@@ -500,7 +797,11 @@ class JMDParser:
                     stripped = raw.lstrip(' ')
                     if _kv_match(stripped):
                         key_part, _, val_part = stripped.partition(": ")
-                        obj[parse_key(key_part)] = parse_scalar(val_part)
+                        self._set_scalar(
+                            obj, kinds, parse_key(key_part),
+                            parse_scalar(val_part),
+                            line.number, is_heading=False,
+                        )
                         pos += 1
                         continue
 
@@ -557,7 +858,7 @@ class JMDParser:
                         or line.content.startswith("- ")):
                     break
                 self._pos = pos
-                self._parse_heading_into(obj, child_depth)
+                self._parse_heading_into(obj, kinds, child_depth)
                 pos = self._pos
                 continue
 
@@ -580,7 +881,11 @@ class JMDParser:
                 # Bare field: key: value
                 if ": " in content:
                     key_part, _, val_part = content.partition(": ")
-                    obj[parse_key(key_part)] = parse_scalar(val_part)
+                    self._set_scalar(
+                        obj, kinds, parse_key(key_part),
+                        parse_scalar(val_part),
+                        line.number, is_heading=False,
+                    )
                     pos += 1
                     continue
 

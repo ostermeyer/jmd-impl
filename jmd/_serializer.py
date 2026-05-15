@@ -8,6 +8,35 @@ from typing import Any, cast
 from ._scalars import quote_key, serialize_scalar
 
 
+def validate_label(label: str) -> str:
+    r"""Validate and normalize a root-heading label (D11).
+
+    Strips leading and trailing whitespace. Rejects labels containing
+    newline or carriage-return characters, which would split the root
+    heading into multiple lines and corrupt the document structure.
+
+    Args:
+        label: The raw label string, possibly mode-prefixed.
+
+    Returns:
+        The label with leading/trailing whitespace removed.
+
+    Raises:
+        ValueError: If the label contains ``\\n`` or ``\\r``.
+    """
+    if "\n" in label or "\r" in label:
+        raise ValueError(
+            "JMD root labels must not contain newline characters; "
+            f"got {label!r}"
+        )
+    label = label.lstrip()
+    # Preserve a leading mode prefix (``- ``, ``? ``, ``! ``) together
+    # with its trailing space — stripping it would erase the mode marker.
+    if len(label) >= 2 and label[0] in "-?!" and label[1] == " ":
+        return label[:2] + label[2:].rstrip()
+    return label.rstrip()
+
+
 def _split_label(label: str) -> tuple[str, str]:
     """Split an optional mode-prefix off a root-heading label.
 
@@ -42,7 +71,14 @@ class JMDSerializer:
     """
 
     def serialize(self, data: Any, label: str = "Document") -> str:
-        """Serialize a Python value to a JMD document string."""
+        """Serialize a Python value to a JMD document string.
+
+        Raises:
+            ValueError: If the label contains newline or carriage-return
+                characters (D11). Leading/trailing whitespace is stripped
+                silently.
+        """
+        label = validate_label(label)
         mark, rest = _split_label(label)
         prefix = f"#{mark} "
         lines: list[str] = []

@@ -57,7 +57,7 @@ from ._schema import (
     SchemaObject,
     SchemaRef,
 )
-from ._serializer import JMDSerializer
+from ._serializer import JMDSerializer, validate_label
 from ._streaming import StreamEvent, jmd_stream
 from ._tokenizer import Line, tokenize
 
@@ -122,6 +122,9 @@ def serialize(
     Returns:
         A JMD document string.
     """
+    # D11: validate/normalize label at the public entry point so both
+    # the C-accelerated and pure-Python paths behave consistently.
+    label = validate_label(label)
     if _HAS_CSERIALIZER:
         body = str(_c_serialize(data, label))
     else:
@@ -131,10 +134,17 @@ def serialize(
     from ._scalars import quote_key, serialize_scalar
     lines: list[str] = []
     for k, v in frontmatter.items():
+        qk = quote_key(k)
         if v is True:
-            lines.append(quote_key(k))
+            lines.append(qk)
+        elif isinstance(v, str) and "\n" in v:
+            # D12: multi-line values go in the blockquote form, matching
+            # the body serializer's handling of multi-line scalars (§9.1).
+            lines.append(f"{qk}:")
+            for part in v.split("\n"):
+                lines.append(">" if part == "" else f"> {part}")
         else:
-            lines.append(f"{quote_key(k)}: {serialize_scalar(v)}")
+            lines.append(f"{qk}: {serialize_scalar(v)}")
     lines.append("")  # blank line separating frontmatter from heading
     lines.append(body)
     return "\n".join(lines)
