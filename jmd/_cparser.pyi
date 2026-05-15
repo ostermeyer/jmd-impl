@@ -2,5 +2,4 @@
 
 from typing import Any
 
-
 def parse(source: str) -> Any: ...
