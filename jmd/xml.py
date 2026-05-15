@@ -21,9 +21,7 @@ from dataclasses import field as dc_field
 
 from lxml import etree
 
-from jmd._scalars import parse_scalar
-from jmd._scalars import quote_key
-from jmd._scalars import serialize_scalar
+from jmd._scalars import parse_scalar, quote_key, serialize_scalar
 from jmd._tokenizer import tokenize
 
 # The xml: namespace is predefined in XML and may not appear in nsmap.
@@ -178,9 +176,11 @@ def _element_to_jmd(
     # Namespace declarations new on this element
     ns_decls = _new_ns_decls(element, parent_nsmap)
 
-    # Element attributes (Clark notation → qualified name)
+    # Element attributes (Clark notation → qualified name).
+    # lxml-stubs type attrib items as str | bytes; in practice they are
+    # always str for XML parsed from text/bytes sources we accept here.
     attrs = [
-        (_clark_to_qname(k, element.nsmap), v)
+        (_clark_to_qname(k, element.nsmap), v)  # type: ignore[arg-type]
         for k, v in element.attrib.items()
     ]
 
@@ -206,7 +206,8 @@ def _element_to_jmd(
     # attribute named "_" must always be quoted to avoid ambiguity.
     for key, val in attrs:
         key_str = '"_"' if key == "_" else quote_key(key)
-        lines.append(f"{key_str}: {_serialize_xml_str(val)}")
+        # val is str in practice (see attrs comprehension above).
+        lines.append(f"{key_str}: {_serialize_xml_str(val)}")  # type: ignore[arg-type]
 
     # Text content alongside attributes or when children follow
     if text and not has_children:
@@ -429,9 +430,11 @@ def _node_to_element(
     }
 
     if parent is None:
-        element = etree.Element(clark, nsmap=local_nsmap)
+        # lxml accepts a None key in nsmap for the default namespace;
+        # lxml-stubs declare Mapping[str, str], which excludes that case.
+        element = etree.Element(clark, nsmap=local_nsmap)  # type: ignore[arg-type]
     else:
-        element = etree.SubElement(parent, clark, nsmap=new_ns or None)
+        element = etree.SubElement(parent, clark, nsmap=new_ns or None)  # type: ignore[arg-type]
 
     # Add attributes and text content from fields.
     # Bare "_" → XML text content.
