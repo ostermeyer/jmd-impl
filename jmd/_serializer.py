@@ -201,8 +201,21 @@ class JMDSerializer:
             for item in lst:
                 lines.append(f"- {serialize_scalar(item)}")
         else:
-            # Heterogeneous array
-            deeper_scope_opened = False
+            # Heterogeneous array — items mixing scalars, dicts, sub-arrays.
+            #
+            # After any item that opens a sub-scope (a nested list, or a
+            # dict with nested fields), the NEXT item needs an explicit
+            # depth-qualified heading `## - ...` (§8.6a/b) so the parser
+            # pops out of the sub-scope and attaches the item to *this*
+            # array.  A bare `- ...` would otherwise be consumed by the
+            # innermost array or fail inside the opened object.
+            # Depth-qualifier uses the array's own scope depth (§8.6a
+            # same-depth form): `## items[]` lives at scope depth 2, so
+            # its items take a `## - ...` prefix. The §8.6b parent-depth
+            # form (`### - ...`) would be ambiguous if the previous item
+            # was a sub-array also at depth 3.
+            qualifier = self._heading(depth)
+            needs_qualifier = False
             for item in lst:
                 if isinstance(item, dict):
                     d_item = cast(dict[str, Any], item)
@@ -214,37 +227,32 @@ class JMDSerializer:
                         k: v for k, v in d_item.items()
                         if isinstance(v, (dict, list))
                     }
+                    pfx = qualifier if needs_qualifier else ""
                     if het_scalar_fields:
                         first = True
                         for k, v in het_scalar_fields.items():
                             sv = serialize_scalar(v)
                             qk = quote_key(k)
                             if first:
-                                if deeper_scope_opened:
-                                    lines.append("")
-                                    lines.append("---")
-                                    lines.append("")
-                                lines.append(f"- {qk}: {sv}")
+                                lines.append(f"{pfx}- {qk}: {sv}")
                                 first = False
                             else:
                                 lines.append(f"  {qk}: {sv}")
                     else:
-                        if deeper_scope_opened:
-                            lines.append("")
-                            lines.append("---")
-                            lines.append("")
-                        lines.append("-")
+                        lines.append(f"{pfx}-")
                     if het_nested_fields:
                         self._write_object_fields(
                             het_nested_fields, lines, depth)
-                    if any(isinstance(v, (dict, list))
-                           for v in d_item.values()):
-                        deeper_scope_opened = True
+                    needs_qualifier = bool(het_nested_fields)
                 elif isinstance(item, list):
+                    # Anonymous sub-array still opens at depth+1; only
+                    # the item-qualifier shrinks to same-depth.
                     lines.append(f"{self._heading(depth + 1)}[]")
                     self._write_array_items(
                         item, lines, depth + 1
                     )
-                    deeper_scope_opened = True
+                    needs_qualifier = True
                 else:
-                    lines.append(f"- {serialize_scalar(item)}")
+                    pfx = qualifier if needs_qualifier else ""
+                    lines.append(f"{pfx}- {serialize_scalar(item)}")
+                    needs_qualifier = False

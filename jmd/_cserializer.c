@@ -546,24 +546,40 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
         return 1;
     }
 
-    /* kind == 0: heterogeneous array -- treat like all-dicts but handle scalars */
+    /* kind == 0: heterogeneous array.
+     *
+     * After any item that opens a sub-scope (a sub-array, or a dict with
+     * nested fields), the NEXT item needs an explicit depth-qualified
+     * heading `## - ...` (§8.6a same-depth form) so the parser pops out
+     * of the inner scope and attaches the item to *this* array. The
+     * qualifier uses the array's own scope depth — for items[] opened
+     * by `## items[]` at depth 2, items take a `## -` prefix.
+     */
+    int needs_qualifier = 0;
     for (Py_ssize_t i = 0; i < n; i++) {
         PyObject *item = PyList_GET_ITEM(list, i);
         if (PyDict_Check(item)) {
-            /* Emit as indentation continuation item */
             PyObject *ikey, *ivalue;
             Py_ssize_t ipos = 0;
             int first_scalar = 1;
+            int has_nested = 0;
 
+            /* Emit scalar fields (with optional qualifier prefix on first) */
             ipos = 0;
             while (PyDict_Next(item, &ipos, &ikey, &ivalue)) {
-                if (PyDict_Check(ivalue) || PyList_Check(ivalue))
+                if (PyDict_Check(ivalue) || PyList_Check(ivalue)) {
+                    has_nested = 1;
                     continue;
+                }
                 const char *ks = PyUnicode_AsUTF8(ikey);
                 if (!ks) return 0;
                 Py_ssize_t klen = (Py_ssize_t)strlen(ks);
                 if (first_scalar) {
-                    if (!outbuf_append(ob, "\n- ", 3)) return 0;
+                    if (!outbuf_putc(ob, '\n')) return 0;
+                    if (needs_qualifier) {
+                        if (!outbuf_heading(ob, depth)) return 0;
+                    }
+                    if (!outbuf_append(ob, "- ", 2)) return 0;
                     first_scalar = 0;
                 } else {
                     if (!outbuf_append(ob, "\n  ", 3)) return 0;
@@ -573,7 +589,12 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 if (!ser_write_scalar(ob, ivalue)) return 0;
             }
             if (first_scalar) {
-                if (!outbuf_append(ob, "\n-", 2)) return 0;
+                /* No scalar fields — emit bare bullet */
+                if (!outbuf_putc(ob, '\n')) return 0;
+                if (needs_qualifier) {
+                    if (!outbuf_heading(ob, depth)) return 0;
+                }
+                if (!outbuf_putc(ob, '-')) return 0;
             }
             /* Nested fields */
             ipos = 0;
@@ -600,16 +621,23 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                         return 0;
                 }
             }
+            needs_qualifier = has_nested;
         }
         else if (PyList_Check(item)) {
             if (!outbuf_putc(ob, '\n')) return 0;
             if (!outbuf_heading(ob, depth + 1)) return 0;
             if (!outbuf_append(ob, "[]", 2)) return 0;
             if (!ser_write_array_items(ob, item, depth + 1)) return 0;
+            needs_qualifier = 1;
         }
         else {
-            if (!outbuf_append(ob, "\n- ", 3)) return 0;
+            if (!outbuf_putc(ob, '\n')) return 0;
+            if (needs_qualifier) {
+                if (!outbuf_heading(ob, depth)) return 0;
+            }
+            if (!outbuf_append(ob, "- ", 2)) return 0;
             if (!ser_write_scalar(ob, item)) return 0;
+            needs_qualifier = 0;
         }
     }
     return 1;

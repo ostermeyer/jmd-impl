@@ -681,6 +681,10 @@ class JMDParser:
                             depth, initial_fields=initial))
                         pos = self._pos
                         continue
+                    # Depth-qualified scalar item: ## - value
+                    items_append(parse_scalar(content_after))
+                    pos += 1
+                    continue
                 break
 
             # Sub-array heading at depth+1: ### []
@@ -712,6 +716,10 @@ class JMDParser:
                         depth, initial_fields=initial))
                     pos = self._pos
                     continue
+                # Depth+1 qualified scalar item: ### - value (§8.6b form)
+                items_append(parse_scalar(content_after))
+                pos += 1
+                continue
 
             # Heading at depth+1 that is not [], -, or - ...: stop.
             if hd == depth_plus_1:

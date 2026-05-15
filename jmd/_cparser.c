@@ -1378,6 +1378,17 @@ parse_array_body(ParserState *st, int depth)
                     pos = st->pos;
                     continue;
                 }
+                /* Depth-qualified scalar item: ## - value */
+                PyObject *val = parse_scalar(after, after_len);
+                if (!val) { Py_DECREF(items); return NULL; }
+                if (PyList_Append(items, val) < 0) {
+                    Py_DECREF(val);
+                    Py_DECREF(items);
+                    return NULL;
+                }
+                Py_DECREF(val);
+                pos++;
+                continue;
             }
             break;
         }
@@ -1438,6 +1449,17 @@ parse_array_body(ParserState *st, int depth)
                 pos = st->pos;
                 continue;
             }
+            /* Depth+1 qualified scalar item: ### - value (§8.6b form) */
+            PyObject *val = parse_scalar(after, after_len);
+            if (!val) { Py_DECREF(items); return NULL; }
+            if (PyList_Append(items, val) < 0) {
+                Py_DECREF(val);
+                Py_DECREF(items);
+                return NULL;
+            }
+            Py_DECREF(val);
+            pos++;
+            continue;
         }
 
         /* Heading at depth+1 that is not [], -, or - ... : stop */

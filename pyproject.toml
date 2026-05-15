@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jmd-format"
-version = "0.5.0"
+version = "0.5.1"
 description = "JMD (JSON Markdown) — structured data format for LLM-driven infrastructure"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -61,9 +61,20 @@ convention = "google"
 [tool.mypy]
 strict = true
 
+# Pytest 9's stubs ship `@pytest.fixture` and `@pytest.mark.*` as
+# `Callable[..., Any]`; under `strict = true` that trips
+# `untyped-decorator` on every fixture / parametrize wrapper, even
+# though the wrapped functions themselves are fully annotated. The
+# tests don't ship as a public surface, so we silence the noise
+# rather than annotate each decoration site.
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = ["untyped-decorator"]
+
 [dependency-groups]
 dev = [
     "lxml-stubs>=0.5.1",
     "mypy>=1.20.1",
+    "pytest>=8.0",
     "ruff>=0.15.10",
 ]
