@@ -118,32 +118,53 @@ class TestStreamingPartialDocs:
 
 
 class TestStreamFrontmatter:
-    """B.1: frontmatter as FRONTMATTER events before DOCUMENT_START."""
+    """§18: frontmatter rides on the DOCUMENT_START envelope header."""
 
     def test_simple_frontmatter(self) -> None:
-        """Test that key: value frontmatter emits FRONTMATTER events."""
+        """Test that key: value frontmatter rides on DOCUMENT_START."""
         src = "confidence: high\nsource: ledger\n\n# Order\nid: 42\n"
         evs = list(jmd.jmd_stream(src))
-        fm = [e for e in evs if e.type == "FRONTMATTER"]
-        assert [(e.key, e.value) for e in fm] == [
-            ("confidence", "high"),
-            ("source", "ledger"),
-        ]
+        assert evs[0].type == "DOCUMENT_START"
+        assert evs[0].mode == "data"
+        assert evs[0].key == "Order"
+        assert evs[0].frontmatter == {
+            "confidence": "high",
+            "source": "ledger",
+        }
+        # Per §18, no separate FRONTMATTER events follow.
+        assert not any(e.type == "FRONTMATTER" for e in evs)
 
     def test_dash_markers_tolerated(self) -> None:
         """Test §3.5.1: --- markers around frontmatter are consumed."""
         src = "---\nconfidence: high\n---\n\n# Order\nid: 42\n"
         evs = list(jmd.jmd_stream(src))
-        fm = [e for e in evs if e.type == "FRONTMATTER"]
-        assert [(e.key, e.value) for e in fm] == [("confidence", "high")]
+        assert evs[0].type == "DOCUMENT_START"
+        assert evs[0].frontmatter == {"confidence": "high"}
 
     def test_multiline_frontmatter(self) -> None:
         """Test D12: multi-line frontmatter values via key: + blockquote."""
         src = "summary:\n> line one\n> line two\n\n# Doc\nx: 1\n"
         evs = list(jmd.jmd_stream(src))
-        fm = [e for e in evs if e.type == "FRONTMATTER"]
-        assert fm and fm[0].key == "summary"
-        assert fm[0].value == "line one\nline two"
+        assert evs[0].type == "DOCUMENT_START"
+        assert evs[0].frontmatter == {"summary": "line one\nline two"}
+
+    def test_no_frontmatter_emits_empty_dict(self) -> None:
+        """Test that absent frontmatter yields ``{}`` on DOCUMENT_START."""
+        evs = list(jmd.jmd_stream("# Order\nid: 1\n"))
+        assert evs[0].type == "DOCUMENT_START"
+        assert evs[0].frontmatter == {}
+
+    def test_document_start_carries_mode(self) -> None:
+        """Test that the four modes surface on DOCUMENT_START.mode."""
+        modes = {
+            "# Order\nid: 1": "data",
+            "#? Order\nstatus: active": "query",
+            "#! Order\nid: integer": "schema",
+            "#- Order\nid: 1": "delete",
+        }
+        for src, expected in modes.items():
+            evs = list(jmd.jmd_stream(src))
+            assert evs[0].mode == expected, f"for {src!r}"
 
 
 class TestJMDStreamParser:
@@ -230,6 +251,9 @@ class TestAsyncStreamingAPI:
             ]
 
         result = asyncio.run(go())
+        # DOCUMENT_START now carries envelope header (mode + frontmatter)
+        # in dedicated fields; the (type, key, value) tuple form keeps
+        # value=None for DOCUMENT_START events.
         assert result == [
             ("DOCUMENT_START", "Doc", None),
             ("FIELD", "id", 7),

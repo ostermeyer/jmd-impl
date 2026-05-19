@@ -87,6 +87,6 @@ class JMDDeleteParser:
             else label_part
         )
 
-        body = JMDParser().parse(source)
+        body = JMDParser().parse(source).value
 
         return JMDDelete(label=label, identifiers=body, is_bulk=is_bulk)

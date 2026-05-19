@@ -36,6 +36,7 @@ from ._cli import (
     json_to_jmd,
 )
 from ._delete import JMDDelete, JMDDeleteParser
+from ._envelope import Envelope, Mode, mode_to_label_prefix
 from ._error import JMDError, JMDErrorItem, is_error_document, parse_error
 from ._html import JMDHTMLRenderer
 from ._parser import JMDParser
@@ -74,7 +75,7 @@ from ._tokenizer import Line, tokenize
 # ---------------------------------------------------------------------------
 
 try:
-    from ._cparser import parse as _c_parse
+    from . import _cparser as _cparser_mod  # noqa: F401 — capability probe
     _HAS_CPARSER: bool = True
 except ImportError:
     _HAS_CPARSER = False
@@ -90,46 +91,74 @@ except ImportError:
 # Public API — C-accelerated by default, Python fallback
 # ---------------------------------------------------------------------------
 
-def parse(source: str) -> Any:
-    """Parse a JMD document into a Python value.
+def parse(source: str) -> Envelope:
+    """Parse a JMD document into a canonical :class:`Envelope` (§3.6).
 
-    Uses the C-accelerated parser if available; falls back to the pure-Python
-    :class:`JMDParser` otherwise.
+    The envelope carries ``mode``, ``label``, ``frontmatter``, and the
+    parsed body in ``value`` — the single entry point of the parser
+    API. Applications that need only the body inspect ``envelope.value``.
 
     Args:
         source: Complete JMD document text.
 
     Returns:
-        A Python ``dict``, ``list``, or scalar value.
+        An :class:`Envelope` with mode, label, frontmatter, and value.
     """
-    if _HAS_CPARSER:
-        return _c_parse(source)
     return JMDParser().parse(source)
 
 
 def serialize(
-    data: Any,
+    obj: Envelope | Any,
     label: str = "Document",
     frontmatter: dict[str, Any] | None = None,
 ) -> str:
-    """Serialize a Python value to a JMD document string.
+    """Serialize an :class:`Envelope` (canonical) or a value to JMD.
 
-    Uses the C-accelerated serializer if available; falls back to the
-    pure-Python :class:`JMDSerializer` otherwise.  The mode marker is
-    carried as a prefix on ``label`` (e.g. ``"- Order"`` for delete,
-    ``"? Order"`` for query, ``"! Order"`` for schema); plain data
-    documents pass the label unadorned.
+    Canonical form per §3.6.3 takes an :class:`Envelope` directly::
+
+        serialize(envelope) -> str
+
+    For an :class:`Envelope` input, the ``label`` and ``frontmatter``
+    keyword arguments are ignored — they are taken from the envelope.
+
+    Convenience form for callers that have not adopted the envelope::
+
+        serialize(value, label="Order", frontmatter={"page": 1})
+
+    The mode marker may be carried as a prefix on ``label``
+    (e.g. ``"- Order"`` for delete, ``"? Order"`` for query,
+    ``"! Order"`` for schema); plain data documents pass the label
+    unadorned.
 
     Args:
-        data:        Python ``dict``, ``list``, or scalar value.
-        label:       Root heading label, optionally mode-prefixed.
+        obj: An :class:`Envelope` or a raw body value (``dict``,
+            ``list``, or scalar).
+        label: Root heading label, optionally mode-prefixed
+            (convenience form only).
         frontmatter: Optional mapping of frontmatter keys to values,
             emitted above the root heading separated by one blank line
-            (§3.5).  A value of ``True`` produces a bare key line.
+            (§3.5). A value of ``True`` produces a bare key line.
+            (Convenience form only.)
 
     Returns:
         A JMD document string.
     """
+    if isinstance(obj, Envelope):
+        return _serialize_internal(
+            obj.value,
+            label=mode_to_label_prefix(obj.mode) + obj.label,
+            frontmatter=obj.frontmatter or None,
+        )
+    return _serialize_internal(obj, label=label, frontmatter=frontmatter)
+
+
+def _serialize_internal(
+    data: Any,
+    *,
+    label: str,
+    frontmatter: dict[str, Any] | None,
+) -> str:
+    """Shared body for :func:`serialize` (both envelope and convenience)."""
     # D11: validate/normalize label at the public entry point so both
     # the C-accelerated and pure-Python paths behave consistently.
     label = validate_label(label)
@@ -169,11 +198,12 @@ _MODE_PREFIXES = {
 }
 
 
-def jmd_mode(source: str) -> str:
+def jmd_mode(source: str) -> Mode:
     """Detect the document mode of a JMD source string.
 
-    Inspects only the first non-blank heading line; does not parse the full
-    document.
+    Inspects only the first non-blank heading line; does not parse the
+    full document. Equivalent to ``parse(source).mode`` but cheaper —
+    no body is parsed.
 
     Args:
         source: JMD document text.
@@ -188,7 +218,7 @@ def jmd_mode(source: str) -> str:
         if line.heading_depth == 1:
             for prefix, mode in _MODE_PREFIXES.items():
                 if line.content.startswith(prefix):
-                    return mode
+                    return mode  # type: ignore[return-value]
             return "data"
     return "data"
 
@@ -202,6 +232,9 @@ __all__ = [
     "parse_key",
     "serialize_scalar",
     "quote_key",
+    # Envelope (§3.6)
+    "Envelope",
+    "Mode",
     # Parser & Serializer (Python classes)
     "JMDParser",
     "JMDSerializer",

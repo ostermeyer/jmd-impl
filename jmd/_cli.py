@@ -20,8 +20,12 @@ from ._streaming import jmd_stream
 # ---------------------------------------------------------------------------
 
 def jmd_to_json(jmd_source: str, indent: int = 2) -> str:
-    """Parse JMD source and return a formatted JSON string."""
-    data = JMDParser().parse(jmd_source)
+    """Parse JMD source and return a formatted JSON string.
+
+    Only the document body is serialized; mode, label, and frontmatter
+    are dropped. Use :func:`jmd.parse` for the full envelope.
+    """
+    data = JMDParser().parse(jmd_source).value
     return json.dumps(data, indent=indent, ensure_ascii=False)
 
 
@@ -32,8 +36,13 @@ def json_to_jmd(json_source: str, label: str = "Document") -> str:
 
 
 def jmd_to_dict(jmd_source: str) -> Any:
-    """Parse JMD source and return a Python dict or list."""
-    return JMDParser().parse(jmd_source)
+    """Parse JMD source and return the body value as a dict or list.
+
+    Convenience for the common case of ignoring envelope metadata
+    (mode, label, frontmatter). For the full canonical shape, use
+    :func:`jmd.parse`, which returns an :class:`Envelope` (§3.6).
+    """
+    return JMDParser().parse(jmd_source).value
 
 
 def dict_to_jmd(data: Any, label: str = "Document") -> str:
@@ -241,9 +250,9 @@ def _cmd_render(source: str, output: str | None = None) -> None:
 
 
 def _cmd_roundtrip(source: str) -> None:
-    data1 = JMDParser().parse(source)
+    data1 = JMDParser().parse(source).value
     jmd2 = JMDSerializer().serialize(data1)
-    data2 = JMDParser().parse(jmd2)
+    data2 = JMDParser().parse(jmd2).value
     j1 = json.dumps(data1, sort_keys=True, ensure_ascii=False)
     j2 = json.dumps(data2, sort_keys=True, ensure_ascii=False)
     if j1 == j2:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ._envelope import Envelope, split_mode_label
 from ._scalars import parse_key, parse_scalar, split_kv
 from ._tokenizer import Line, is_thematic_break, tokenize
 
@@ -280,14 +281,19 @@ class JMDParser:
             form={"existing": existing_kind, "new": new_kind},
         )
 
-    def parse(self, source: str) -> Any:
-        """Parse a JMD document string into a Python value.
+    def parse(self, source: str) -> Envelope:
+        """Parse a JMD document string into a canonical :class:`Envelope`.
+
+        Implements the §3.6 parser contract: returns ``{mode, label,
+        frontmatter, value}`` for every document, regardless of root
+        marker. The ``.frontmatter`` instance attribute is retained as
+        internal state but is redundant with ``envelope.frontmatter``.
 
         Args:
             source: Complete JMD document text.
 
         Returns:
-            A Python dict (for object documents) or list (for array documents).
+            An :class:`Envelope` with the parsed body in ``value``.
 
         Raises:
             ValueError: If the document is empty or has an invalid root marker.
@@ -307,25 +313,31 @@ class JMDParser:
 
         first = self._lines[self._pos]
 
+        if first.heading_depth != 1:
+            raise ValueError(
+                f"Line {first.number}: expected '# <label>' or '# []'"
+            )
+
+        mode, label = split_mode_label(first.content)
+
         if _USE_C:
             # Strip frontmatter: pass only from the first heading line onwards
             body = "\n".join(source.splitlines()[first.number - 1:])
-            return _c_parse(body)
-
-        # Root array: # [] or # Label[]
-        if first.heading_depth == 1 and (
-            first.content == "[]" or first.content.endswith("[]")
-        ):
+            value: Any = _c_parse(body)
+        elif first.content == "[]" or first.content.endswith("[]"):
+            # Root array: # [] / # Label[] / #- [] / #? X[] / #! X[]
             self._pos += 1
-            return self._parse_array_body(depth=1)
-
-        # Root object: # Label
-        if first.heading_depth == 1:
+            value = self._parse_array_body(depth=1)
+        else:
+            # Root object
             self._pos += 1
-            return self._parse_object_body(depth=1)
+            value = self._parse_object_body(depth=1)
 
-        raise ValueError(
-            f"Line {first.number}: expected '# <label>' or '# []'"
+        return Envelope(
+            mode=mode,
+            label=label,
+            value=value,
+            frontmatter=dict(self.frontmatter),
         )
 
     def _cur(self) -> Line | None:

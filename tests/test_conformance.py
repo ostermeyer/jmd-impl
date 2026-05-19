@@ -14,11 +14,12 @@ are grouped by document mode:
 * ``data/``, ``schema/``, ``query/``, ``delete/`` — canonical
   documents.  Three tests run for every pair:
 
-  1. **Parse**     — ``jmd.parse(.jmd)`` deep-equals ``.json``
-  2. **Serialize** — ``jmd.serialize(value, label)`` equals ``.jmd``
-     byte-for-byte (label reconstructed from the root heading)
-  3. **Round-trip** — ``parse(serialize(parse(.jmd), ...))`` yields
-     the same value
+  1. **Parse**     — ``jmd.parse(.jmd).value`` deep-equals ``.json``
+                     and the envelope ``.mode`` matches the directory
+  2. **Serialize** — ``jmd.serialize(envelope)`` equals ``.jmd``
+                     byte-for-byte (envelope from a prior parse)
+  3. **Round-trip** — parse → serialize → parse again preserves
+                      the envelope (§3.6.3)
 
 * ``tolerance/`` — inputs exercising parser-tolerance rules where the
   canonical output diverges from the input.  Only the **Parse** test
@@ -37,20 +38,10 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import re
 
 import pytest
 
 import jmd
-
-_MODE_PREFIX = {
-    "data": "",
-    "schema": "! ",
-    "query": "? ",
-    "delete": "- ",
-}
-
-_HEADING_RE = re.compile(r"^#([!?-])?\s+(.*)$")
 
 
 def _fixtures_root() -> pathlib.Path | None:
@@ -81,27 +72,6 @@ def _collect_pairs() -> list[tuple[str, pathlib.Path, pathlib.Path]]:
             if json_path.exists():
                 pairs.append((mode_dir.name, jmd_path, json_path))
     return pairs
-
-
-def _extract_label(jmd_text: str) -> str:
-    """Extract the bare label from the first heading of a JMD document.
-
-    Frontmatter and blank lines before the heading are skipped.  The
-    trailing ``[]`` sigil for root arrays is stripped — the serializer
-    re-adds it when the value is a list.
-    """
-    for line in jmd_text.splitlines():
-        m = _HEADING_RE.match(line)
-        if m:
-            text = m.group(2)
-            return text[:-2] if text.endswith("[]") else text
-    msg = "No root heading found"
-    raise ValueError(msg)
-
-
-def _label_arg(mode: str, label: str) -> str:
-    """Build the mode-prefixed label to pass to ``jmd.serialize``."""
-    return _MODE_PREFIX.get(mode, "") + label
 
 
 def _collect_must_fail() -> list[tuple[pathlib.Path, pathlib.Path]]:
@@ -175,11 +145,19 @@ def test_parse(
     jmd_path: pathlib.Path,
     json_path: pathlib.Path,
 ) -> None:
-    """Parse the fixture and deep-compare against the expected JSON value."""
-    del backend, mode  # used only for the test id
+    """Parse the fixture; envelope.value matches the .json oracle.
+
+    Also asserts that the envelope mode matches the fixture's
+    directory name (``data/``, ``schema/``, ``query/``, ``delete/``)
+    — the tolerance/ tree carries its own canonical mode in the fixture.
+    """
+    del backend
     jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
-    assert jmd.parse(jmd_text) == expected
+    env = jmd.parse(jmd_text)
+    assert env.value == expected
+    if mode in ("data", "schema", "query", "delete"):
+        assert env.mode == mode
 
 
 @pytest.mark.skipif(
@@ -195,17 +173,20 @@ def test_serialize(
     jmd_path: pathlib.Path,
     json_path: pathlib.Path,
 ) -> None:
-    """Serialize the .json and byte-compare against the .jmd fixture."""
-    del backend  # used only for the test id
+    """Serialize the envelope and byte-compare against the .jmd fixture.
+
+    Per §3.6.3 the canonical serializer entry takes an envelope
+    directly. Parsing the fixture and serializing the envelope is
+    the canonical round-trip path.
+    """
+    del backend, mode
     jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
-    label = _label_arg(mode, _extract_label(jmd_text))
-    # JMDParser exposes the frontmatter dict as a side-effect of parsing;
-    # the top-level jmd.parse() returns only the value.
-    parser = jmd.JMDParser()
-    parser.parse(jmd_text)
-    fm = parser.frontmatter or None
-    out = jmd.serialize(expected, label=label, frontmatter=fm)
+    env = jmd.parse(jmd_text)
+    # Sanity check the envelope before serializing — guards against
+    # the serializer compensating for a parse bug we'd rather see.
+    assert env.value == expected
+    out = jmd.serialize(env)
     # Fixture files end with a single trailing newline; the serializer
     # mirrors the byte form emitted by the C-accelerated reference (no
     # trailing newline — callers add it when writing a file).
@@ -225,16 +206,16 @@ def test_roundtrip(
     jmd_path: pathlib.Path,
     json_path: pathlib.Path,
 ) -> None:
-    """Parse, serialize, parse again — must yield the original value."""
-    del backend  # used only for the test id
+    """Parse → serialize → parse preserves the envelope (§3.6.3)."""
+    del backend, mode
     jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
-    label = _label_arg(mode, _extract_label(jmd_text))
-    parser = jmd.JMDParser()
-    value = parser.parse(jmd_text)
-    fm = parser.frontmatter or None
-    out = jmd.serialize(value, label=label, frontmatter=fm)
-    assert jmd.parse(out) == expected
+    env1 = jmd.parse(jmd_text)
+    env2 = jmd.parse(jmd.serialize(env1))
+    assert env2.value == expected
+    assert env2.mode == env1.mode
+    assert env2.label == env1.label
+    assert env2.frontmatter == env1.frontmatter
 
 
 @pytest.mark.skipif(

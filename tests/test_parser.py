@@ -8,7 +8,7 @@ from jmd import JMDParser
 
 def parse(source: str) -> Any:
     """Parse a JMD document string and return the body value."""
-    return JMDParser().parse(source)
+    return JMDParser().parse(source).value
 
 
 # ---------------------------------------------------------------------------
@@ -227,8 +227,9 @@ class TestFrontmatter:
     def test_frontmatter_not_in_body(self) -> None:
         """Test that frontmatter keys are not included in the document body."""
         p = JMDParser()
-        result = p.parse("confidence: 0.9\n# X\nval: 1")
-        assert "confidence" not in result
+        env = p.parse("confidence: 0.9\n# X\nval: 1")
+        assert "confidence" not in env.value
+        assert env.frontmatter == {"confidence": 0.9}
 
     def test_unknown_frontmatter_accepted(self) -> None:
         """Test that unknown frontmatter keys are accepted without error."""

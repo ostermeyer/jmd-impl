@@ -10,7 +10,7 @@ from jmd import JMDParser, JMDSerializer
 def roundtrip(data: Any, label: str = "Document") -> Any:
     """Serialize data to JMD and parse it back to a Python value."""
     jmd_text = JMDSerializer().serialize(data, label=label)
-    return JMDParser().parse(jmd_text)
+    return JMDParser().parse(jmd_text).value
 
 
 class TestRoundtrip:
@@ -91,5 +91,5 @@ class TestRoundtrip:
             ],
         }
         jmd_text = JMDSerializer().serialize(original, label="Order")
-        recovered = JMDParser().parse(jmd_text)
+        recovered = JMDParser().parse(jmd_text).value
         assert json.loads(json.dumps(original)) == recovered

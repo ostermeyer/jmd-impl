@@ -143,7 +143,7 @@ class TestFrontmatterMarkerTolerance:
         """Test that --- before any field is consumed."""
         src = "---\nconfidence: high\n\n# Doc\nx: 1\n"
         p = JMDParser()
-        body = p.parse(src)
+        body = p.parse(src).value
         assert p.frontmatter == {"confidence": "high"}
         assert body == {"x": 1}
 
@@ -151,7 +151,7 @@ class TestFrontmatterMarkerTolerance:
         """Test that --- between last field and root heading is consumed."""
         src = "confidence: high\n---\n# Doc\nx: 1\n"
         p = JMDParser()
-        body = p.parse(src)
+        body = p.parse(src).value
         assert p.frontmatter == {"confidence": "high"}
         assert body == {"x": 1}
 
@@ -170,7 +170,7 @@ class TestFrontmatterMarkerTolerance:
         """Test that ---- and ----- are also tolerated as marker lines."""
         src = "----\nconfidence: high\n-----\n# Doc\nx: 1\n"
         p = JMDParser()
-        body = p.parse(src)
+        body = p.parse(src).value
         assert p.frontmatter == {"confidence": "high"}
         assert body == {"x": 1}
 
@@ -317,7 +317,7 @@ class TestMultilineFrontmatter:
         fm = {"summary": "line one\nline two", "page": 1}
         s = jmd.serialize({"id": 42}, label="Order", frontmatter=fm)
         p = JMDParser()
-        body = p.parse(s)
+        body = p.parse(s).value
         assert body == {"id": 42}
         assert p.frontmatter == fm
 

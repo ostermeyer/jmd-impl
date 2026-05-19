@@ -88,7 +88,7 @@ class JMDHTMLRenderer:
             label = "Document"
             is_array = False
 
-        data = JMDParser().parse(source)
+        data = JMDParser().parse(source).value
         if is_array:
             body = self._render_array(data)
         else:

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Generator, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ._envelope import Mode, split_mode_label
 from ._parser import (
     _K_ARRAY_PROMOTED,
     _K_ARRAY_SIGIL,
@@ -73,14 +74,29 @@ def _register_key(
 
 @dataclass
 class StreamEvent:
-    """A single event emitted by the JMD streaming parser."""
+    """A single event emitted by the JMD streaming parser.
+
+    The ``mode`` and ``frontmatter`` fields are populated only on
+    ``DOCUMENT_START`` events — they together with ``key`` (the root
+    label) constitute the full envelope header per spec §18. All
+    subsequent events carry body content only and leave both fields
+    ``None``.
+    """
 
     type: str   # DOCUMENT_START | DOCUMENT_END | FIELD | OBJECT_START |
     # OBJECT_END | ARRAY_START | ARRAY_END | ITEM_START | ITEM_END | ITEM_VALUE
     key: str | None = None
     value: Any = None
+    # Envelope header — set only on DOCUMENT_START (§18, mirrors §3.6).
+    mode: Mode | None = None
+    frontmatter: dict[str, Any] | None = None
 
     def __repr__(self) -> str:
+        if self.type == "DOCUMENT_START":
+            return (
+                f"StreamEvent(DOCUMENT_START, mode={self.mode!r}, "
+                f"label={self.key!r}, frontmatter={self.frontmatter!r})"
+            )
         if self.value is not None:
             return (f"StreamEvent({self.type}, key={self.key!r}, "
                     f"value={self.value!r})")
@@ -124,10 +140,13 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
             elif stype == "array":
                 yield StreamEvent("ARRAY_END", key=skey)
 
-    # Frontmatter: any lines before the first heading. Emits FRONTMATTER
-    # events with key + value (str / bool / scalar). §3.5.1 tolerates
-    # stray ``---`` markers (3+ hyphens) before and after the block.
-    # Multi-line values (D12) follow as ``key:`` + blockquote.
+    # Frontmatter (§3.5): buffered into a dict here. Per §18 the
+    # envelope header — mode, label, frontmatter — is emitted as a
+    # single DOCUMENT_START event when the first heading arrives;
+    # subsequent events carry body content only and never re-transmit
+    # the header. §3.5.1 tolerates stray ``---`` markers around the
+    # block. Multi-line values (D12) follow as ``key:`` + blockquote.
+    frontmatter: dict[str, Any] = {}
     fi = 0
     while fi < len(lines):
         fline = lines[fi]
@@ -143,10 +162,7 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
         content = fline.content
         if ": " in content:
             key_part, _, val_part = content.partition(": ")
-            yield StreamEvent(
-                "FRONTMATTER", key=parse_key(key_part),
-                value=parse_scalar(val_part),
-            )
+            frontmatter[parse_key(key_part)] = parse_scalar(val_part)
             fi += 1
             continue
         if content.endswith(":") and ": " not in content:
@@ -168,14 +184,11 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                     fi += 1
                 else:
                     break
-            value = "\n".join(parts).rstrip("\n")
-            yield StreamEvent("FRONTMATTER", key=key, value=value)
+            frontmatter[key] = "\n".join(parts).rstrip("\n")
             continue
         if (content and not content.startswith(">")
                 and not content.startswith("- ")):
-            yield StreamEvent(
-                "FRONTMATTER", key=parse_key(content), value=True,
-            )
+            frontmatter[parse_key(content)] = True
             fi += 1
             continue
         break
@@ -183,24 +196,26 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
         return
 
     first = lines[fi]
-    if first.heading_depth == 1 and (
-        first.content == "[]" or first.content == "- []"
-    ):
-        yield StreamEvent("DOCUMENT_START", key="[]")
+    if first.heading_depth != 1:
+        return
+
+    mode, label = split_mode_label(first.content)
+    # Emit the envelope header in a single event per §18.
+    yield StreamEvent(
+        "DOCUMENT_START",
+        key=label,
+        mode=mode,
+        frontmatter=dict(frontmatter),
+    )
+    if first.content == "[]" or first.content == "- []":
         yield StreamEvent("ARRAY_START", key="[]")
         scope_stack.append(("array", "[]", 1, {}))
-    elif first.heading_depth == 1:
-        label = first.content
-        if label.startswith("? "):
-            label = label[2:]
-        elif label.startswith("! "):
-            label = label[2:]
-        elif label.startswith("- "):
-            label = label[2:]
-        yield StreamEvent("DOCUMENT_START", key=label)
-        scope_stack.append(("doc", label, 0, {}))
+    elif first.content.endswith("[]"):
+        # #? Label[] / #! Label[] / # Label[] — root array with a label
+        yield StreamEvent("ARRAY_START", key=label or None)
+        scope_stack.append(("array", label or "[]", 1, {}))
     else:
-        return
+        scope_stack.append(("doc", label, 0, {}))
 
     li = fi + 1
     while li < len(lines):

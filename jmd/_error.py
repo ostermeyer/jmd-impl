@@ -85,7 +85,7 @@ def parse_error(source: str) -> JMDError:
     if not is_error_document(source):
         raise ValueError("Document is not a JMD error document (# Error)")
 
-    raw = JMDParser().parse(source)
+    raw = JMDParser().parse(source).value
     if not isinstance(raw, dict):
         raise ValueError("Error document body must be an object")
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for document mode detection and top-level API (spec § 19)."""
+"""Tests for document mode detection and top-level API (spec §§ 3.6, 19)."""
 
-from jmd import jmd_mode, parse, serialize
+from jmd import Envelope, jmd_mode, parse, serialize
 
 
 class TestModeDetection:
@@ -40,10 +40,14 @@ class TestModeDetection:
 class TestTopLevelAPI:
     """Tests for the top-level parse and serialize convenience functions."""
 
-    def test_parse_returns_dict(self) -> None:
-        """Test that parse returns the document body as a dict."""
-        result = parse("# X\nk: v")
-        assert result == {"k": "v"}
+    def test_parse_returns_envelope(self) -> None:
+        """Test that parse returns a canonical Envelope (§3.6)."""
+        env = parse("# X\nk: v")
+        assert isinstance(env, Envelope)
+        assert env.mode == "data"
+        assert env.label == "X"
+        assert env.value == {"k": "v"}
+        assert env.frontmatter == {}
 
     def test_serialize_returns_string(self) -> None:
         """Test that serialize returns a JMD string with the heading."""
@@ -54,4 +58,4 @@ class TestTopLevelAPI:
     def test_parse_serialize_roundtrip(self) -> None:
         """Test that parse and serialize are inverse operations."""
         data = {"id": 1, "name": "Test", "active": True}
-        assert parse(serialize(data, label="X")) == data
+        assert parse(serialize(data, label="X")).value == data
