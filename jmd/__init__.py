@@ -75,7 +75,7 @@ from ._tokenizer import Line, tokenize
 # ---------------------------------------------------------------------------
 
 try:
-    from . import _cparser as _cparser_mod  # noqa: F401 — capability probe
+    from ._cparser import parse as _c_parse_body
     _HAS_CPARSER: bool = True
 except ImportError:
     _HAS_CPARSER = False
@@ -88,7 +88,22 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Public API — C-accelerated by default, Python fallback
+# Public API — explicit backend dispatch at the API boundary
+#
+# Both backends are observable from outside:
+#
+#   * :func:`parse` picks the C-accelerated body parser if compiled,
+#     and falls back to :class:`JMDParser` (pure Python) otherwise.
+#     The choice is visible in the ``_HAS_CPARSER`` flag.
+#
+#   * :class:`JMDParser` is a Python-only guarantee — it never
+#     delegates to C. Use it directly for debugging, deterministic
+#     fallback in tests, or any context where the C path is
+#     undesirable.
+#
+# This is a deliberate change from earlier versions that hid a
+# C-dispatch inside ``JMDParser.parse``: ``Python ist Python und C
+# ist C — keine verdeckten Operationen``.
 # ---------------------------------------------------------------------------
 
 def parse(source: str) -> Envelope:
@@ -98,13 +113,42 @@ def parse(source: str) -> Envelope:
     parsed body in ``value`` — the single entry point of the parser
     API. Applications that need only the body inspect ``envelope.value``.
 
+    Backend selection happens here and is observable via the
+    module-level ``_HAS_CPARSER`` flag: when the C accelerator is
+    importable, body parsing is delegated to it; otherwise the pure-
+    Python :class:`JMDParser` handles the entire document. Header
+    extraction (tokenize + frontmatter + mode/label) is always Python.
+
     Args:
         source: Complete JMD document text.
 
     Returns:
         An :class:`Envelope` with mode, label, frontmatter, and value.
     """
+    if _HAS_CPARSER:
+        return _parse_with_c_body(source)
     return JMDParser().parse(source)
+
+
+def _parse_with_c_body(source: str) -> Envelope:
+    """Parse using the C body accelerator (envelope header is Python).
+
+    The Python parser handles tokenization, frontmatter, and root-
+    heading extraction (cheap and unavoidable — the C accelerator
+    parses bodies only, not full documents). The body slice from the
+    root heading onwards is then passed to the C ``parse`` function.
+    Both parts are assembled into a canonical :class:`Envelope`.
+    """
+    parser = JMDParser()
+    mode, label, frontmatter, body_line = parser.parse_header(source)
+    body = "\n".join(source.splitlines()[body_line - 1:])
+    value = _c_parse_body(body)
+    return Envelope(
+        mode=mode,
+        label=label,
+        value=value,
+        frontmatter=frontmatter,
+    )
 
 
 def serialize(

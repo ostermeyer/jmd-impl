@@ -112,20 +112,16 @@ def backend(
     """Select the parser/serializer backend for a test run.
 
     The ``"c"`` param leaves the module flags alone (C accelerator
-    wins if available).  The ``"py"`` param disables both accelerators
-    so the pure-Python implementations are exercised.
+    wins if compiled).  The ``"py"`` param disables both accelerators
+    at the public-API boundary; :class:`jmd.JMDParser` is already
+    pure Python (no internal C dispatch), so flipping the two
+    ``_HAS_*`` flags in :mod:`jmd` is sufficient to force the
+    Python parse + serialize paths.
     """
     backend_name: str = request.param
     if backend_name == "py":
-        # The top-level ``jmd.parse`` checks ``_HAS_CPARSER``; ``JMDParser``
-        # itself internally checks ``_parser._USE_C`` and would otherwise
-        # re-enter the C accelerator even when the top-level flag is off.
-        # Patch both so the pure-Python parse + serialize paths actually
-        # get exercised end-to-end.
-        from jmd import _parser as _pp
         monkeypatch.setattr(jmd, "_HAS_CPARSER", False)
         monkeypatch.setattr(jmd, "_HAS_CSERIALIZER", False)
-        monkeypatch.setattr(_pp, "_USE_C", False)
     return backend_name
 
 

@@ -10,16 +10,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ._envelope import Envelope, split_mode_label
+from ._envelope import Envelope, Mode, split_mode_label
 from ._scalars import parse_key, parse_scalar, split_kv
 from ._tokenizer import Line, is_thematic_break, tokenize
-
-try:
-    from jmd._cparser import parse as _c_parse
-    _USE_C = True
-except ImportError:
-    _USE_C = False
-
 
 # Pattern to detect key: value on an item line or indented continuation
 _KV_RE = re.compile(r'^(?:[a-zA-Z0-9_\-]+|"(?:[^"\\]|\\.)*"): ')
@@ -281,8 +274,63 @@ class JMDParser:
             form={"existing": existing_kind, "new": new_kind},
         )
 
+    def parse_header(
+        self, source: str,
+    ) -> tuple[Mode, str, dict[str, Any], int]:
+        """Parse the envelope header without parsing the body.
+
+        Tokenizes the source, consumes frontmatter, locates the root
+        heading, and returns the four §3.6 envelope-header fields plus
+        the source line number where the body starts. Used by the
+        C-accelerated dispatch in :mod:`jmd` to share Python's
+        frontmatter machinery without paying for a full Python body
+        parse.
+
+        After this call, ``self._lines``, ``self._pos``, and
+        ``self.frontmatter`` are left in the state where
+        :meth:`parse` would continue with the body — callers that
+        only need the header should treat the instance as consumed.
+
+        Args:
+            source: Complete JMD document text.
+
+        Returns:
+            A tuple ``(mode, label, frontmatter, body_start_line)``
+            where ``body_start_line`` is the 1-based source line of
+            the root heading. ``frontmatter`` is a fresh dict copy.
+
+        Raises:
+            ValueError: If the document is empty, missing a root
+                heading, or has an unexpected root heading depth.
+        """
+        self._lines = tokenize(source)
+        self._pos = 0
+        self.frontmatter = {}
+
+        if not self._lines:
+            raise ValueError("Empty document")
+
+        self._parse_frontmatter()
+
+        if self._pos >= len(self._lines):
+            raise ValueError("No root heading found")
+
+        first = self._lines[self._pos]
+        if first.heading_depth != 1:
+            raise ValueError(
+                f"Line {first.number}: expected '# <label>' or '# []'"
+            )
+
+        mode, label = split_mode_label(first.content)
+        return mode, label, dict(self.frontmatter), first.number
+
     def parse(self, source: str) -> Envelope:
         """Parse a JMD document string into a canonical :class:`Envelope`.
+
+        Pure Python: this class never delegates to the C extension —
+        backend selection happens at the public API boundary in
+        :func:`jmd.parse`. Use this class directly when you need a
+        Python-only guarantee (debugging, forced fallback in tests).
 
         Implements the §3.6 parser contract: returns ``{mode, label,
         frontmatter, value}`` for every document, regardless of root
@@ -298,36 +346,13 @@ class JMDParser:
         Raises:
             ValueError: If the document is empty or has an invalid root marker.
         """
-        self._lines = tokenize(source)
-        self._pos = 0
-        self.frontmatter = {}
-
-        if not self._lines:
-            raise ValueError("Empty document")
-
-        # Parse frontmatter (lines before first heading)
-        self._parse_frontmatter()
-
-        if self._pos >= len(self._lines):
-            raise ValueError("No root heading found")
-
+        mode, label, frontmatter, _body_line = self.parse_header(source)
+        # parse_header left _lines and _pos positioned at the root heading.
         first = self._lines[self._pos]
-
-        if first.heading_depth != 1:
-            raise ValueError(
-                f"Line {first.number}: expected '# <label>' or '# []'"
-            )
-
-        mode, label = split_mode_label(first.content)
-
-        if _USE_C:
-            # Strip frontmatter: pass only from the first heading line onwards
-            body = "\n".join(source.splitlines()[first.number - 1:])
-            value: Any = _c_parse(body)
-        elif first.content == "[]" or first.content.endswith("[]"):
+        if first.content == "[]" or first.content.endswith("[]"):
             # Root array: # [] / # Label[] / #- [] / #? X[] / #! X[]
             self._pos += 1
-            value = self._parse_array_body(depth=1)
+            value: Any = self._parse_array_body(depth=1)
         else:
             # Root object
             self._pos += 1
@@ -337,7 +362,7 @@ class JMDParser:
             mode=mode,
             label=label,
             value=value,
-            frontmatter=dict(self.frontmatter),
+            frontmatter=frontmatter,
         )
 
     def _cur(self) -> Line | None:
