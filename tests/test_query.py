@@ -74,15 +74,30 @@ class TestQueryParsing:
         assert cond.op == "!"
         assert cond.values[0].op == "~"
 
-    def test_regex_condition(self) -> None:
-        """Test that a regex pattern produces a regex condition."""
-        q = JMDQueryParser().parse("#? X\nsku: ^A\\d+")
-        assert q.fields[0].condition.op == "regex"
+    def test_regex_condition_explicit(self) -> None:
+        """Test that ``~re:pattern`` produces a regex condition (§A.1.8)."""
+        q = JMDQueryParser().parse("#? X\nsku: ~re:^A\\d+")
+        cond = q.fields[0].condition
+        assert cond.op == "regex"
+        assert cond.values[0] == "^A\\d+"
 
-    def test_regex_alternation_with_wildcard(self) -> None:
-        """Test that an alternation with a wildcard produces a regex op."""
+    def test_regex_autodetect_removed(self) -> None:
+        """Regression: dot in a value is literal, not a regex metacharacter.
+
+        Per spec §A.1.8, autodetection was removed because natural data
+        like ``Max.Mustermann`` would silently become a regex.
+        """
+        q = JMDQueryParser().parse("#? X\nname: Max.Mustermann")
+        cond = q.fields[0].condition
+        assert cond.op == "="
+        assert cond.values[0] == "Max.Mustermann"
+
+    def test_alternation_with_metachars_is_set_membership(self) -> None:
+        """Without ``~re:``, ``a|b`` is set membership, even with dots/stars."""
         q = JMDQueryParser().parse("#? X\nstatus: pending|active.*")
-        assert q.fields[0].condition.op == "regex"
+        cond = q.fields[0].condition
+        assert cond.op == "|"
+        assert cond.values == ["pending", "active.*"]
 
     def test_frontmatter_parsed(self) -> None:
         """Test that pagination frontmatter is stored in frontmatter."""
@@ -172,11 +187,11 @@ class TestQueryExecution:
         assert all("vip" not in r["tag"] for r in results)
 
     def test_regex_filter(self) -> None:
-        """Test that a regex condition filters records by pattern match."""
+        """Test that an explicit ``~re:`` condition filters by pattern match."""
         records = [
             {"sku": "A001"}, {"sku": "B002"}, {"sku": "A123"}, {"sku": "C999"},
         ]
-        results = query("#? X\nsku: ^A\\d+", records)
+        results = query("#? X\nsku: ~re:^A\\d+", records)
         assert all(r["sku"].startswith("A") for r in results)
         assert len(results) == 2
 
@@ -185,15 +200,15 @@ class TestQueryExecution:
         records = [
             {"name": "ACME Corp"}, {"name": "acme corp"}, {"name": "Beta Ltd"}
         ]
-        results = query("#? X\nname: .*Corp.*", records)
+        results = query("#? X\nname: ~re:.*Corp.*", records)
         assert len(results) == 1
         assert results[0]["name"] == "ACME Corp"
 
     def test_negation_regex_filter(self) -> None:
-        """Test that a negated regex excludes pattern-matching records."""
+        """Test that ``!~re:pattern`` excludes pattern-matching records."""
         records = [
             {"sku": "LEGACY_001"}, {"sku": "A001"}, {"sku": "LEGACY_002"}
         ]
-        results = query("#? X\nsku: !^LEGACY.*", records)
+        results = query("#? X\nsku: !~re:^LEGACY.*", records)
         assert len(results) == 1
         assert results[0]["sku"] == "A001"

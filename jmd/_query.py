@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD QBE — Query by Example (v0.3)."""
+"""JMD QBE — Query by Example (v0.3.3)."""
 
 from __future__ import annotations
 
@@ -11,9 +11,11 @@ from ._parser import _is_indent_field, _is_object_item_content
 from ._scalars import parse_key, parse_scalar
 from ._tokenizer import Line, tokenize
 
-# Regex metacharacters that signal a regex pattern
-# (excluding | which is handled separately)
-_REGEX_META = re.compile(r'[.*+?^$\[\]()\\\-]')
+# Explicit regex signal per spec §A.1.8: callers opt into regex matching
+# with a leading ``~re:`` prefix. Content-based autodetection was removed
+# because natural data like ``name: Max.Mustermann`` would silently
+# become a regex matching any character for the dot.
+_REGEX_PREFIX = "~re:"
 
 
 @dataclass
@@ -93,16 +95,16 @@ def _parse_condition(raw: str) -> Condition:
             rest = raw[len(op):].strip()
             return Condition(op=op, values=[parse_scalar(rest)])
 
+    # Explicit regex (§A.1.8): ``~re:pattern`` — content autodetection
+    # was removed because a literal dot in natural data (``Max.Mustermann``)
+    # would silently match any character.  Order matters: this check
+    # MUST precede the bare ``~`` contains branch below.
+    if raw.startswith(_REGEX_PREFIX):
+        return Condition(op="regex", values=[raw[len(_REGEX_PREFIX):].strip()])
+
     # Contains (~) — case-insensitive substring match
     if raw.startswith("~"):
         return Condition(op="~", values=[parse_scalar(raw[1:].strip())])
-
-    # Regex pattern: contains metacharacters (other than |) → fullmatch regex
-    # Pure alternation (only | as metachar) → | op for simple set membership
-    if (_REGEX_META.search(raw)
-            or ("|" in raw
-                and _REGEX_META.search(raw.replace("|", "")))):
-        return Condition(op="regex", values=[raw])
 
     parts = [parse_scalar(p.strip()) for p in raw.split("|")]
     op = "=" if len(parts) == 1 else "|"
@@ -110,7 +112,7 @@ def _parse_condition(raw: str) -> Condition:
 
 
 class JMDQueryParser:
-    """Parses JMD QBE query documents (#?) — v0.3 heading-scope model.
+    """Parses JMD QBE query documents (#?) — v0.3.3 heading-scope model.
 
     Implements the JMD Query-by-Example (QBE) syntax.
     """
