@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Serializer (v0.3 — indentation continuation, blockquote multiline)."""
+"""JMD Serializer (v0.3.3 — indentation continuation, blockquote multiline)."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def _split_label(label: str) -> tuple[str, str]:
 
 
 class JMDSerializer:
-    r"""Serializes Python dicts/lists to JMD v0.3 format.
+    r"""Serializes Python dicts/lists to JMD v0.3.3 format.
 
     Uses indentation continuation for array object items and
     blockquotes for multiline string values.

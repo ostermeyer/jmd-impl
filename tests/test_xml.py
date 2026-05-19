@@ -5,9 +5,15 @@ from __future__ import annotations
 
 import textwrap
 
-from lxml import etree
+import pytest
 
-from jmd.xml import jmd_to_xml, xml_to_jmd
+# Skip the entire module when the optional XML dependency is missing
+# (lxml lives under the ``jmd-format[xml]`` extra).
+pytest.importorskip("lxml")
+
+from lxml import etree  # noqa: E402
+
+from jmd.xml import jmd_to_xml, xml_to_jmd  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers

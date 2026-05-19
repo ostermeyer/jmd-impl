@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Parser (v0.3).
+"""JMD Parser (v0.3.3).
 
 Implements the heading-scope model with blockquote and indentation
 continuation support.
@@ -156,7 +156,7 @@ def _is_indent_field(raw_text: str) -> tuple[bool, str, str] | None:
 
 
 class JMDParser:
-    r"""Parses JMD v0.3 documents into Python dicts/lists.
+    r"""Parses JMD v0.3.3 documents into Python dicts/lists.
 
     Uses a scope stack driven by heading depth. Supports:
     - Blockquote multiline strings (> prefix)

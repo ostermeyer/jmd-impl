@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Error Documents (# Error) — v0.3."""
+"""JMD Error Documents (# Error) — v0.3.3."""
 
 from __future__ import annotations
 

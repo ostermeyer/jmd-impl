@@ -19,7 +19,13 @@ import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 
-from lxml import etree
+try:
+    from lxml import etree
+except ImportError as exc:  # pragma: no cover
+    raise ImportError(
+        "jmd.xml requires lxml. Install with: "
+        'pip install "jmd-format[xml]"'
+    ) from exc
 
 from jmd._scalars import parse_scalar, quote_key, serialize_scalar
 from jmd._tokenizer import tokenize

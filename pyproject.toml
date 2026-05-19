@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Andreas Ostermeyer", email = "andreas@ostermeyer.de" }]
 requires-python = ">=3.10"
-dependencies = ["lxml>=5.0"]
+dependencies = []
 keywords = ["jmd", "llm", "structured-data", "json", "markdown", "mcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -24,6 +24,11 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Text Processing :: Markup",
 ]
+
+[project.optional-dependencies]
+# XML companion (jmd.xml) — only required for the JMD-over-XML mapping.
+# Install with: pip install "jmd-format[xml]"
+xml = ["lxml>=5.0"]
 
 [project.urls]
 Homepage = "https://github.com/ostermeyer/jmd-spec"

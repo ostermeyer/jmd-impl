@@ -302,7 +302,7 @@ def _flag(args: list[str], name: str, default: str | None = None) -> str | None:
 
 
 _USAGE = """\
-JMD - JSON Markdown converter (v0.3)
+JMD - JSON Markdown converter (v0.3.3)
 
 Usage:
   python -m jmd to-json   <input.jmd>  [-o output.json] [--indent N]
@@ -321,9 +321,9 @@ def main() -> None:
     """Entry point for the JMD command-line interface."""
     args = sys.argv[1:]
     if not args:
-        print("=== JMD v0.3 Demo: JMD -> JSON ===\n")
+        print("=== JMD v0.3.3 Demo: JMD -> JSON ===\n")
         print(jmd_to_json(SAMPLE_JMD))
-        print("\n=== JMD v0.3 Demo: JSON -> JMD ===\n")
+        print("\n=== JMD v0.3.3 Demo: JSON -> JMD ===\n")
         print(json_to_jmd(jmd_to_json(SAMPLE_JMD), label="Order"))
         print("\n=== Roundtrip Test ===")
         _cmd_roundtrip(SAMPLE_JMD)

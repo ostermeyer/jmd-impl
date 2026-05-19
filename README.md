@@ -1,6 +1,6 @@
 # jmd-format — Python Reference Implementation
 
-Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.4). Includes a C-accelerated parser and serializer, plus lossless XML↔JMD conversion.
+Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.3.3). Includes a C-accelerated parser and serializer, plus lossless XML↔JMD conversion.
 
 ## Installation
 
@@ -13,7 +13,7 @@ pip install git+https://github.com/ostermeyer/jmd-impl.git
 Or pin a specific release:
 
 ```bash
-pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.4
+pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.5.1
 ```
 
 Pre-built wheels for Linux, macOS, and Windows are attached to each
@@ -21,7 +21,7 @@ Pre-built wheels for Linux, macOS, and Windows are attached to each
 installed directly:
 
 ```bash
-pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.4/jmd_format-0.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.5.1/jmd_format-0.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 The C extensions are built automatically during installation if a C compiler is available. If not, the pure-Python fallback is used transparently.
