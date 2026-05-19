@@ -2,9 +2,27 @@
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
+# GCC/Clang flags (Linux, macOS). MSVC has its own switches and already
+# applies /O2 /W3 from setuptools' release config, so an empty list
+# leaves the defaults intact.
+_GNU_COMPILE_ARGS = ["-O3"]
+_MSVC_COMPILE_ARGS: list[str] = []
+
 
 class OptionalBuildExt(build_ext):
-    """Build C extensions, but silently skip if compilation fails."""
+    """Build C extensions, but silently skip if compilation fails.
+
+    Applies compiler-appropriate ``extra_compile_args`` before building
+    so the GCC ``-O3`` flag does not break MSVC, which uses ``/O2``.
+    """
+
+    def build_extensions(self) -> None:
+        """Set compiler-appropriate ``extra_compile_args`` and build."""
+        is_msvc = self.compiler.compiler_type == "msvc"
+        args = _MSVC_COMPILE_ARGS if is_msvc else _GNU_COMPILE_ARGS
+        for ext in self.extensions:
+            ext.extra_compile_args = list(args)
+        super().build_extensions()
 
     def build_extension(self, ext):
         """Build the extension, silently skipping if compilation fails."""
@@ -16,16 +34,8 @@ class OptionalBuildExt(build_ext):
 
 setup(
     ext_modules=[
-        Extension(
-            "jmd._cparser",
-            sources=["jmd/_cparser.c"],
-            extra_compile_args=["-O3"],
-        ),
-        Extension(
-            "jmd._cserializer",
-            sources=["jmd/_cserializer.c"],
-            extra_compile_args=["-O3"],
-        ),
+        Extension("jmd._cparser", sources=["jmd/_cparser.c"]),
+        Extension("jmd._cserializer", sources=["jmd/_cserializer.c"]),
     ],
     cmdclass={"build_ext": OptionalBuildExt},
 )
