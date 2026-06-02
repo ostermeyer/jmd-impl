@@ -199,7 +199,10 @@ def run_benchmark() -> None:
 
     print("=" * 72)
     print("JMD over XML — Token Efficiency Benchmark")
-    print(f"Tokenizer: cl100k_base  |  Energy: {ENERGY_PER_M_TOKENS_WH} Wh/M tokens")
+    print(
+        f"Tokenizer: cl100k_base  |  "
+        f"Energy: {ENERGY_PER_M_TOKENS_WH} Wh/M tokens"
+    )
     print("=" * 72)
 
     totals: dict[str, int] = {name: 0 for name, _ in representations}
@@ -228,8 +231,6 @@ def run_benchmark() -> None:
     baseline_total = totals["XML pretty"]
     for name, n in totals.items():
         pct = n / baseline_total * 100
-        saved = baseline_total - n
-        energy_saved_uh = saved / 1_000_000 * ENERGY_PER_M_TOKENS_WH * 1_000_000
         bar = _bar(n / baseline_total)
         marker = " ◀ baseline" if name == "XML pretty" else f"  {pct:5.1f}%"
         print(f"  {name:<18} {n:5d} tokens  {bar}{marker}")
@@ -254,11 +255,13 @@ def run_benchmark() -> None:
     requests_per_day = 1_000_000_000
     saved_per_req = xml_pretty_total / len(SAMPLES) - jmd_total / len(SAMPLES)
     saved_per_day_tokens = saved_per_req * requests_per_day
-    saved_kwh_per_day = saved_per_day_tokens / 1_000_000 * ENERGY_PER_M_TOKENS_WH / 1000
+    saved_kwh_per_day = (
+        saved_per_day_tokens / 1_000_000 * ENERGY_PER_M_TOKENS_WH / 1000
+    )
     saved_mwh_per_year = saved_kwh_per_day * 365 / 1000
 
     print()
-    print(f"  Energy implication (1B requests/day, JMD vs XML pretty):")
+    print("  Energy implication (1B requests/day, JMD vs XML pretty):")
     print(f"    Saved per request : ~{saved_per_req:,.0f} tokens")
     print(f"    Saved per day     : ~{saved_kwh_per_day:,.0f} kWh")
     print(f"    Saved per year    : ~{saved_mwh_per_year:,.0f} MWh")
