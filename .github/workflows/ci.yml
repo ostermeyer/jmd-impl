@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pytest
+          pip install pytest hypothesis
           pip install -e ".[xml]"
 
       - name: Run tests
