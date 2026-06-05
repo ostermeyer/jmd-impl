@@ -1326,6 +1326,15 @@ parse_array_body(ParserState *st, int depth)
 
         /* Heading at same depth or shallower */
         if (hd > 0 && hd <= depth) {
+            /* Anonymous heading at this array's depth = level-pop: a
+             * deeper scope of the previous item (sub-array / sub-object)
+             * was closed, and we are back at this array. Consume the
+             * marker and continue with the next item. A labelled heading
+             * at this depth still ends the array (§8.6). */
+            if (hd == depth && content_len == 0) {
+                pos++;
+                continue;
+            }
             /* Depth-qualified item at same depth: ## - */
             if (hd == depth && content_len == 1 && content[0] == '-') {
                 pos++;

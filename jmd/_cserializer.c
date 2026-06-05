@@ -397,19 +397,6 @@ ser_write_object_fields(OutBuf *ob, PyObject *dict, int depth)
 /* Array serialization                                                 */
 /* ------------------------------------------------------------------ */
 
-/* Check if any value in a dict is a dict or list. */
-static int
-has_nested_values(PyObject *dict)
-{
-    PyObject *key, *value;
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(dict, &pos, &key, &value)) {
-        if (PyDict_Check(value) || PyList_Check(value))
-            return 1;
-    }
-    return 0;
-}
-
 /* Classify array: 0=mixed, 1=all scalars, 2=all dicts, 3=all lists */
 static int
 classify_array(PyObject *list)
@@ -460,28 +447,17 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
     }
 
     if (kind == 2) {
-        /* All dicts -> indentation continuation items */
-        /* Check if any item has nested fields (for thematic breaks) */
-        int any_nested = 0;
-        for (Py_ssize_t i = 0; i < n; i++) {
-            if (has_nested_values(PyList_GET_ITEM(list, i))) {
-                any_nested = 1;
-                break;
-            }
-        }
-
+        /* All dicts -> records. Each record is bare `- field` (+ indented
+         * continuation), nested fields as deeper headings. After a record
+         * that opened a sub-structure, if more records follow, emit a
+         * level-pop (`#`x depth, an anonymous heading at the array's own
+         * depth) so the next bare `-` is read into THIS array (sec 8.6). */
         for (Py_ssize_t i = 0; i < n; i++) {
             PyObject *item = PyList_GET_ITEM(list, i);
             PyObject *ikey, *ivalue;
             Py_ssize_t ipos = 0;
             int first_scalar = 1;
-            int wrote_thematic = 0;
-
-            /* Thematic break between items if any has nested fields */
-            if (i > 0 && any_nested) {
-                if (!outbuf_append(ob, "\n\n---\n", 5)) return 0;
-                wrote_thematic = 1;
-            }
+            int wrote_nested = 0;
 
             /* First pass: scalar fields (inline continuation) */
             ipos = 0;
@@ -494,9 +470,6 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 Py_ssize_t klen = (Py_ssize_t)strlen(ks);
 
                 if (first_scalar) {
-                    if (!wrote_thematic && i > 0) {
-                        /* No thematic break needed, just newline */
-                    }
                     if (!outbuf_append(ob, "\n- ", 3)) return 0;
                     if (!ser_write_key(ob, ks, klen)) return 0;
                     if (!outbuf_append(ob, ": ", 2)) return 0;
@@ -540,6 +513,17 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                     if (!outbuf_append(ob, "[]", 2)) return 0;
                     if (!ser_write_array_items(ob, ivalue, depth + 1))
                         return 0;
+                }
+                wrote_nested = 1;
+            }
+
+            /* Level-pop: this record opened a sub-structure and more
+             * records follow -> return to the array's depth. The last
+             * record needs no pop (end-of-scope closes it). */
+            if (wrote_nested && i < n - 1) {
+                if (!outbuf_putc(ob, '\n')) return 0;
+                for (int d = 0; d < depth; d++) {
+                    if (!outbuf_putc(ob, '#')) return 0;
                 }
             }
         }

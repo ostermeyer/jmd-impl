@@ -681,11 +681,9 @@ class JMDParser:
                     if is_item:
                         pos += 1
                         continue
-                    # Thematic break (---) after a blank: skip the blank
-                    # so the break is handled by the in-body separator rule
-                    # below. Unconditional per the v0.3.4 §8.6 clarification
-                    # (mixed arrays: the qualifying item may follow the
-                    # break, so we must not gate on items[-1]'s shape).
+                    # Thematic break (---): decoration only (degraded in
+                    # the level-pop redesign). Skip the blank so the `---`
+                    # is reached and skipped by the in-body rule below.
                     if is_thematic_break(nxt):
                         pos += 1
                         continue
@@ -695,6 +693,14 @@ class JMDParser:
 
             # Heading at same depth or shallower.
             if hd > 0 and hd <= depth:
+                # Anonymous heading at this array's depth = level-pop: a
+                # deeper scope of the previous item (sub-array / sub-object)
+                # was closed, and we are back at this array. Consume the
+                # marker and continue with the next item. A *labelled*
+                # heading at this depth still ends the array.
+                if hd == depth and content == "":
+                    pos += 1
+                    continue
                 # Depth-qualified item at same depth: ## -
                 if hd == depth and content == "-":
                     pos += 1
@@ -792,11 +798,10 @@ class JMDParser:
                     pos += 1
                 continue
 
-            # Thematic break (---): item separator within an array body
-            # (§8.6). Unconditional per the v0.3.4 clarification — the array
-            # as a whole qualifies for separators, so a `---` after a flat
-            # item still starts the next item. Gating on the preceding
-            # item's shape would drop items in mixed arrays.
+            # Thematic break (---): degraded to pure decoration in the
+            # level-pop redesign. Record boundaries are bare `-` items and
+            # the level-pop `#`, never `---`. Skip it (parser tolerance for
+            # legacy / hand-written separators).
             if is_thematic_break(line):
                 pos += 1
                 continue

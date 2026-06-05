@@ -161,10 +161,7 @@ class JMDSerializer:
                 lines.append(f"{self._heading(depth + 1)}[]")
                 self._write_array_items(cast(list[Any], item), lines, depth + 1)
         elif all_dicts:
-            has_nested = any(
-                any(isinstance(v, (dict, list)) for v in item.values())
-                for item in lst
-            )
+            n = len(lst)
             for i, item in enumerate(lst):
                 scalar_fields: dict[str, Any] = {
                     k: v for k, v in item.items()
@@ -175,26 +172,27 @@ class JMDSerializer:
                     if isinstance(v, (dict, list))
                 }
                 if scalar_fields:
-                    # First field on the '- ' line, rest indented
+                    # First field on the '- ' line, rest indented.
                     first = True
                     for k, v in scalar_fields.items():
                         sv = serialize_scalar(v)
                         qk = quote_key(k)
                         if first:
-                            if i > 0 and has_nested:
-                                lines.append("")
-                                lines.append("---")
                             lines.append(f"- {qk}: {sv}")
                             first = False
                         else:
                             lines.append(f"  {qk}: {sv}")
                 else:
-                    if i > 0 and has_nested:
-                        lines.append("")
-                        lines.append("---")
                     lines.append("-")
                 if nested_fields:
                     self._write_object_fields(nested_fields, lines, depth)
+                    # Level-pop (§8.6): this record opened a sub-structure
+                    # (heading at depth+1). If more records follow, emit an
+                    # anonymous heading at the array's own depth to pop back,
+                    # so the next bare `-` item is read into THIS array. The
+                    # last record needs no pop — end-of-scope closes it.
+                    if i < n - 1:
+                        lines.append("#" * depth)
         elif all_scalars:
             for item in lst:
                 lines.append(f"- {serialize_scalar(item)}")
