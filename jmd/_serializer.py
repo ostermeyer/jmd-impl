@@ -184,7 +184,6 @@ class JMDSerializer:
                             if i > 0 and has_nested:
                                 lines.append("")
                                 lines.append("---")
-                                lines.append("")
                             lines.append(f"- {qk}: {sv}")
                             first = False
                         else:
@@ -193,7 +192,6 @@ class JMDSerializer:
                     if i > 0 and has_nested:
                         lines.append("")
                         lines.append("---")
-                        lines.append("")
                     lines.append("-")
                 if nested_fields:
                     self._write_object_fields(nested_fields, lines, depth)
