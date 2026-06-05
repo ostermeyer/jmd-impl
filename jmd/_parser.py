@@ -681,14 +681,12 @@ class JMDParser:
                     if is_item:
                         pos += 1
                         continue
-                    # Thematic break (---): continue only if this array
-                    # owns nested-object items (i.e. acts as the item
-                    # separator for items with sub-structures).
-                    if (is_thematic_break(nxt)
-                            and items
-                            and isinstance(items[-1], dict)
-                            and any(isinstance(v, (dict, list))
-                                    for v in items[-1].values())):
+                    # Thematic break (---) after a blank: skip the blank
+                    # so the break is handled by the in-body separator rule
+                    # below. Unconditional per the v0.3.4 §8.6 clarification
+                    # (mixed arrays: the qualifying item may follow the
+                    # break, so we must not gate on items[-1]'s shape).
+                    if is_thematic_break(nxt):
                         pos += 1
                         continue
                 break
@@ -794,16 +792,14 @@ class JMDParser:
                     pos += 1
                 continue
 
-            # Thematic break (---): visual separator between array items.
-            # Only consumed by arrays whose items contain nested structures.
+            # Thematic break (---): item separator within an array body
+            # (§8.6). Unconditional per the v0.3.4 clarification — the array
+            # as a whole qualifies for separators, so a `---` after a flat
+            # item still starts the next item. Gating on the preceding
+            # item's shape would drop items in mixed arrays.
             if is_thematic_break(line):
-                if (items
-                        and isinstance(items[-1], dict)
-                        and any(isinstance(v, (dict, list))
-                                for v in items[-1].values())):
-                    pos += 1
-                    continue
-                break
+                pos += 1
+                continue
 
             break
 

@@ -670,23 +670,6 @@ is_thematic_break(const JMDLine *line)
     return 1;
 }
 
-/* Check if items[-1] is a dict with any value that is a dict or list */
-static int
-last_item_has_nested(PyObject *items)
-{
-    Py_ssize_t n = PyList_GET_SIZE(items);
-    if (n == 0) return 0;
-    PyObject *last = PyList_GET_ITEM(items, n - 1);
-    if (!PyDict_Check(last)) return 0;
-
-    PyObject *key, *value;
-    Py_ssize_t pos = 0;
-    while (PyDict_Next(last, &pos, &key, &value)) {
-        if (PyDict_Check(value) || PyList_Check(value))
-            return 1;
-    }
-    return 0;
-}
 
 /* ------------------------------------------------------------------ */
 /* Parser state                                                        */
@@ -1325,8 +1308,12 @@ parse_array_body(ParserState *st, int depth)
                     continue;
                 }
 
-                /* Thematic break check */
-                if (is_thematic_break(nxt) && last_item_has_nested(items)) {
+                /* Thematic break (---) after a blank line: skip the blank
+                 * so the break is handled by the in-body separator rule
+                 * below. Unconditional per the v0.3.4 §8.6 clarification —
+                 * in a mixed array the qualifying item may follow the
+                 * break, so we must not gate on the preceding item. */
+                if (is_thematic_break(nxt)) {
                     pos++;
                     continue;
                 }
@@ -1526,13 +1513,14 @@ parse_array_body(ParserState *st, int depth)
             continue;
         }
 
-        /* Thematic break */
+        /* Thematic break (---): item separator within an array body
+         * (§8.6). Unconditional per the v0.3.4 clarification — the array
+         * as a whole qualifies for separators, so a `---` after a flat
+         * item still starts the next item. Gating on the preceding item's
+         * shape would drop items in mixed arrays. */
         if (is_thematic_break(line)) {
-            if (last_item_has_nested(items)) {
-                pos++;
-                continue;
-            }
-            break;
+            pos++;
+            continue;
         }
 
         break;
