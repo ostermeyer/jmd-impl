@@ -18,7 +18,6 @@ import json
 import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from typing import cast
 
 try:
     from lxml import etree
@@ -86,7 +85,11 @@ def jmd_to_xml(source: str) -> bytes:
     """
     node = _parse_jmd_nodes(source)
     root = _node_to_element(node, None, {})
-    return cast(str, etree.tostring(root, encoding="unicode")).encode()
+    # encoding="unicode" makes tostring return str; annotate so the value is
+    # str whether or not lxml-stubs are installed (Any -> str on assignment),
+    # avoiding both a no-any-return without stubs and a redundant cast with.
+    xml_text: str = etree.tostring(root, encoding="unicode")
+    return xml_text.encode()
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +189,7 @@ def element_to_jmd(
     # lxml-stubs type attrib items as str | bytes; in practice they are
     # always str for XML parsed from text/bytes sources we accept here.
     attrs = [
-        (_clark_to_qname(k, element.nsmap), v)  # type: ignore[arg-type]
+        (_clark_to_qname(k, element.nsmap), v)  # type: ignore[arg-type, unused-ignore]
         for k, v in element.attrib.items()
     ]
 
@@ -213,7 +216,7 @@ def element_to_jmd(
     for key, val in attrs:
         key_str = '"_"' if key == "_" else quote_key(key)
         # val is str in practice (see attrs comprehension above).
-        lines.append(f"{key_str}: {_serialize_xml_str(val)}")  # type: ignore[arg-type]
+        lines.append(f"{key_str}: {_serialize_xml_str(val)}")  # type: ignore[arg-type, unused-ignore]
 
     # Text content alongside attributes or when children follow
     if text and not has_children:
@@ -432,9 +435,9 @@ def _node_to_element(
     if parent is None:
         # lxml accepts a None key in nsmap for the default namespace;
         # lxml-stubs declare Mapping[str, str], which excludes that case.
-        element = etree.Element(clark, nsmap=local_nsmap)  # type: ignore[arg-type]
+        element = etree.Element(clark, nsmap=local_nsmap)  # type: ignore[arg-type, unused-ignore]
     else:
-        element = etree.SubElement(parent, clark, nsmap=new_ns or None)  # type: ignore[arg-type]
+        element = etree.SubElement(parent, clark, nsmap=new_ns or None)  # type: ignore[arg-type, unused-ignore]
 
     # Add attributes and text content from fields.
     # Bare "_" → XML text content.

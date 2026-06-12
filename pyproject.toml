@@ -88,14 +88,6 @@ disable_error_code = ["untyped-decorator"]
 module = "lxml.*"
 ignore_missing_imports = true
 
-# With lxml-stubs (Python 3.13), etree.tostring(encoding="unicode") is typed
-# as str, making cast(str, ...) in xml.py redundant. Without stubs (Python
-# 3.11), the cast is necessary to avoid no-any-return. Disabling redundant-cast
-# for this module keeps the gate green on all platforms.
-[[tool.mypy.overrides]]
-module = "jmd.xml"
-disable_error_code = ["redundant-cast"]
-
 [dependency-groups]
 dev = [
     "hypothesis>=6.0",
