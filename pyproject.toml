@@ -79,6 +79,23 @@ strict = true
 module = "tests.*"
 disable_error_code = ["untyped-decorator"]
 
+# lxml-stubs may not be installed on every developer's machine (they are a
+# dev-only dep and CI may omit them). When absent, mypy treats lxml as
+# untyped, which makes all the type: ignore[arg-type] comments in xml.py
+# appear "unused". Silencing the import-untyped error keeps the gate green
+# on every platform without removing the legitimate arg-type suppressions.
+[[tool.mypy.overrides]]
+module = "lxml.*"
+ignore_missing_imports = true
+
+# With lxml-stubs (Python 3.13), etree.tostring(encoding="unicode") is typed
+# as str, making cast(str, ...) in xml.py redundant. Without stubs (Python
+# 3.11), the cast is necessary to avoid no-any-return. Disabling redundant-cast
+# for this module keeps the gate green on all platforms.
+[[tool.mypy.overrides]]
+module = "jmd.xml"
+disable_error_code = ["redundant-cast"]
+
 [dependency-groups]
 dev = [
     "hypothesis>=6.0",

@@ -76,12 +76,14 @@ from ._tokenizer import Line, tokenize
 
 try:
     from ._cparser import parse as _c_parse_body
+
     _HAS_CPARSER: bool = True
 except ImportError:
     _HAS_CPARSER = False
 
 try:
     from ._cserializer import serialize as _c_serialize
+
     _HAS_CSERIALIZER: bool = True
 except ImportError:
     _HAS_CSERIALIZER = False
@@ -105,6 +107,7 @@ except ImportError:
 # C-dispatch inside ``JMDParser.parse``: ``Python ist Python und C
 # ist C — keine verdeckten Operationen``.
 # ---------------------------------------------------------------------------
+
 
 def parse(source: str) -> Envelope:
     """Parse a JMD document into a canonical :class:`Envelope` (§3.6).
@@ -141,7 +144,7 @@ def _parse_with_c_body(source: str) -> Envelope:
     """
     parser = JMDParser()
     mode, label, frontmatter, body_line = parser.parse_header(source)
-    body = "\n".join(source.splitlines()[body_line - 1:])
+    body = "\n".join(source.splitlines()[body_line - 1 :])
     value = _c_parse_body(body)
     return Envelope(
         mode=mode,
@@ -213,6 +216,7 @@ def _serialize_internal(
     if not frontmatter:
         return body
     from ._scalars import quote_key, serialize_scalar
+
     lines: list[str] = []
     for k, v in frontmatter.items():
         qk = quote_key(k)

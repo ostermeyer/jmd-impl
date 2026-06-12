@@ -58,16 +58,22 @@ def _register_key(
             return
         if existing == _K_ARRAY_SIGIL and new_kind == _K_ARRAY_SIGIL:
             raise JMDParseError(
-                kind="repeated_explicit_array", line=line_num, key=key,
+                kind="repeated_explicit_array",
+                line=line_num,
+                key=key,
                 form={"existing": existing, "new": new_kind},
             )
         if _K_ARRAY_SIGIL in (existing, new_kind):
             raise JMDParseError(
-                kind="sigil_conflict", line=line_num, key=key,
+                kind="sigil_conflict",
+                line=line_num,
+                key=key,
                 form={"existing": existing, "new": new_kind},
             )
         raise JMDParseError(
-            kind="repeated_scalar_key", line=line_num, key=key,
+            kind="repeated_scalar_key",
+            line=line_num,
+            key=key,
             form={"existing": existing, "new": new_kind},
         )
 
@@ -83,7 +89,7 @@ class StreamEvent:
     ``None``.
     """
 
-    type: str   # DOCUMENT_START | DOCUMENT_END | FIELD | OBJECT_START |
+    type: str  # DOCUMENT_START | DOCUMENT_END | FIELD | OBJECT_START |
     # OBJECT_END | ARRAY_START | ARRAY_END | ITEM_START | ITEM_END | ITEM_VALUE
     key: str | None = None
     value: Any = None
@@ -98,8 +104,10 @@ class StreamEvent:
                 f"label={self.key!r}, frontmatter={self.frontmatter!r})"
             )
         if self.value is not None:
-            return (f"StreamEvent({self.type}, key={self.key!r}, "
-                    f"value={self.value!r})")
+            return (
+                f"StreamEvent({self.type}, key={self.key!r}, "
+                f"value={self.value!r})"
+            )
         if self.key:
             return f"StreamEvent({self.type}, key={self.key!r})"
         return f"StreamEvent({self.type})"
@@ -186,8 +194,11 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                     break
             frontmatter[key] = "\n".join(parts).rstrip("\n")
             continue
-        if (content and not content.startswith(">")
-                and not content.startswith("- ")):
+        if (
+            content
+            and not content.startswith(">")
+            and not content.startswith("- ")
+        ):
             frontmatter[parse_key(content)] = True
             fi += 1
             continue
@@ -231,9 +242,9 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                 nxt = lines[peek]
                 if nxt.heading_depth > 0:
                     continue
-                if (nxt.heading_depth == 0
-                        and (nxt.content == "-"
-                             or nxt.content.startswith("- "))):
+                if nxt.heading_depth == 0 and (
+                    nxt.content == "-" or nxt.content.startswith("- ")
+                ):
                     if scope_stack and scope_stack[-1][0] in ("array", "item"):
                         continue
                 # Thematic break after blank line within array: cosmetic
@@ -241,8 +252,9 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                     if scope_stack and scope_stack[-1][0] in ("array", "item"):
                         continue
                 # Blockquote after blank line — keep going
-                if (nxt.heading_depth == 0
-                        and nxt.raw_text.strip().startswith(">")):
+                if nxt.heading_depth == 0 and nxt.raw_text.strip().startswith(
+                    ">"
+                ):
                     continue
             if scope_stack and scope_stack[-1][0] == "item":
                 scope_stack.pop()
@@ -269,9 +281,11 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
             if content == "-" or content.startswith("- "):
                 yield from close_scopes_to(depth + 1)
 
-                if (scope_stack
-                        and scope_stack[-1][0] == "item"
-                        and scope_stack[-1][2] == depth):
+                if (
+                    scope_stack
+                    and scope_stack[-1][0] == "item"
+                    and scope_stack[-1][2] == depth
+                ):
                     scope_stack.pop()
                     yield StreamEvent("ITEM_END")
 
@@ -282,22 +296,32 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                         scope_stack.append(("item", None, depth, {}))
                         key_part, _, val_part = content_after.partition(": ")
                         _register_key(
-                            scope_stack, parse_key(key_part),
-                            _K_SCALAR_BARE, line.number,
+                            scope_stack,
+                            parse_key(key_part),
+                            _K_SCALAR_BARE,
+                            line.number,
                         )
-                        yield StreamEvent("FIELD", key=parse_key(key_part),
-                                          value=parse_scalar(val_part))
+                        yield StreamEvent(
+                            "FIELD",
+                            key=parse_key(key_part),
+                            value=parse_scalar(val_part),
+                        )
                         # Consume indented continuation fields
                         while li < len(lines):
                             indent_result = _is_indent_field(lines[li].raw_text)
                             if indent_result is not None:
                                 _, ikp, ivp = indent_result
                                 _register_key(
-                                    scope_stack, parse_key(ikp),
-                                    _K_SCALAR_BARE, lines[li].number,
+                                    scope_stack,
+                                    parse_key(ikp),
+                                    _K_SCALAR_BARE,
+                                    lines[li].number,
                                 )
-                                yield StreamEvent("FIELD", key=parse_key(ikp),
-                                                  value=parse_scalar(ivp))
+                                yield StreamEvent(
+                                    "FIELD",
+                                    key=parse_key(ikp),
+                                    value=parse_scalar(ivp),
+                                )
                                 li += 1
                             else:
                                 break
@@ -319,7 +343,10 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                 elif content.endswith("[]"):
                     key = parse_key(content[:-2])
                     _register_key(
-                        scope_stack, key, _K_ARRAY_SIGIL, line.number,
+                        scope_stack,
+                        key,
+                        _K_ARRAY_SIGIL,
+                        line.number,
                     )
                     yield StreamEvent("ARRAY_START", key=key)
                     scope_stack.append(("array", key, depth, {}))
@@ -327,20 +354,27 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                     key_part, _, val_part = content.partition(": ")
                     key = parse_key(key_part)
                     _register_key(
-                        scope_stack, key, _K_SCALAR_HEADING, line.number,
+                        scope_stack,
+                        key,
+                        _K_SCALAR_HEADING,
+                        line.number,
                     )
                     if val_part == "|" or val_part == ">":
                         # §5.2 block scalar from scalar heading.
                         bs_value, li = parse_block_scalar_from(
-                            lines, li, folded=(val_part == ">"),
+                            lines,
+                            li,
+                            folded=(val_part == ">"),
                         )
                         yield StreamEvent("FIELD", key=key, value=bs_value)
                         continue
                     if val_part == "":
                         # Check for blockquote
-                        if (li < len(lines)
-                                and lines[li].heading_depth == 0
-                                and lines[li].raw_text.strip().startswith(">")):
+                        if (
+                            li < len(lines)
+                            and lines[li].heading_depth == 0
+                            and lines[li].raw_text.strip().startswith(">")
+                        ):
                             bq_parts: list[str] = []
                             while li < len(lines):
                                 raw = lines[li].raw_text.strip()
@@ -352,8 +386,11 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                                     li += 1
                                 else:
                                     break
-                            yield StreamEvent("FIELD", key=key,
-                                              value="\n".join(bq_parts).strip("\n"))
+                            yield StreamEvent(
+                                "FIELD",
+                                key=key,
+                                value="\n".join(bq_parts).strip("\n"),
+                            )
                         else:
                             yield StreamEvent("FIELD", key=key, value="")
                     else:
@@ -365,15 +402,17 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                 else:
                     key = parse_key(content)
                     _register_key(
-                        scope_stack, key, _K_OBJECT, line.number,
+                        scope_stack,
+                        key,
+                        _K_OBJECT,
+                        line.number,
                     )
                     yield StreamEvent("OBJECT_START", key=key)
                     scope_stack.append(("object", key, depth, {}))
 
         # Bare object item: -
         elif line.content == "-":
-            if (scope_stack
-                    and scope_stack[-1][0] == "item"):
+            if scope_stack and scope_stack[-1][0] == "item":
                 scope_stack.pop()
                 yield StreamEvent("ITEM_END")
             yield StreamEvent("ITEM_START")
@@ -384,39 +423,43 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
         elif line.content.startswith("- "):
             content_after = line.content[2:]
             if _is_object_item_content(content_after):
-                if (scope_stack
-                        and scope_stack[-1][0] == "item"):
+                if scope_stack and scope_stack[-1][0] == "item":
                     scope_stack.pop()
                     yield StreamEvent("ITEM_END")
                 yield StreamEvent("ITEM_START")
-                item_depth = (
-                    (scope_stack[-1][2] + 1) if scope_stack else 1
-                )
+                item_depth = (scope_stack[-1][2] + 1) if scope_stack else 1
                 scope_stack.append(("item", None, item_depth, {}))
                 key_part, _, val_part = content_after.partition(": ")
                 _register_key(
-                    scope_stack, parse_key(key_part),
-                    _K_SCALAR_BARE, line.number,
+                    scope_stack,
+                    parse_key(key_part),
+                    _K_SCALAR_BARE,
+                    line.number,
                 )
-                yield StreamEvent("FIELD", key=parse_key(key_part),
-                                  value=parse_scalar(val_part))
+                yield StreamEvent(
+                    "FIELD",
+                    key=parse_key(key_part),
+                    value=parse_scalar(val_part),
+                )
                 # Consume indented continuation fields
                 while li < len(lines):
                     indent_result = _is_indent_field(lines[li].raw_text)
                     if indent_result is not None:
                         _, ikp, ivp = indent_result
                         _register_key(
-                            scope_stack, parse_key(ikp),
-                            _K_SCALAR_BARE, lines[li].number,
+                            scope_stack,
+                            parse_key(ikp),
+                            _K_SCALAR_BARE,
+                            lines[li].number,
                         )
-                        yield StreamEvent("FIELD", key=parse_key(ikp),
-                                          value=parse_scalar(ivp))
+                        yield StreamEvent(
+                            "FIELD", key=parse_key(ikp), value=parse_scalar(ivp)
+                        )
                         li += 1
                     else:
                         break
             else:
-                if (scope_stack
-                        and scope_stack[-1][0] == "item"):
+                if scope_stack and scope_stack[-1][0] == "item":
                     scope_stack.pop()
                     yield StreamEvent("ITEM_END")
                 yield StreamEvent(
@@ -464,15 +507,19 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
             if val_part == "|" or val_part == ">":
                 # §5.2 block scalar from bare field.
                 bs_value, li = parse_block_scalar_from(
-                    lines, li, folded=(val_part == ">"),
+                    lines,
+                    li,
+                    folded=(val_part == ">"),
                 )
                 yield StreamEvent("FIELD", key=key, value=bs_value)
                 continue
             if val_part == "":
                 # Check for blockquote
-                if (li < len(lines)
-                        and lines[li].heading_depth == 0
-                        and lines[li].raw_text.strip().startswith(">")):
+                if (
+                    li < len(lines)
+                    and lines[li].heading_depth == 0
+                    and lines[li].raw_text.strip().startswith(">")
+                ):
                     bq_parts_bare: list[str] = []
                     while li < len(lines):
                         raw = lines[li].raw_text.strip()
@@ -484,8 +531,11 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                             li += 1
                         else:
                             break
-                    yield StreamEvent("FIELD", key=key,
-                                      value="\n".join(bq_parts_bare).strip("\n"))
+                    yield StreamEvent(
+                        "FIELD",
+                        key=key,
+                        value="\n".join(bq_parts_bare).strip("\n"),
+                    )
                 else:
                     yield StreamEvent("FIELD", key=key, value="")
             else:
@@ -499,9 +549,11 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
         elif line.content.endswith(":") and ": " not in line.content:
             key = parse_key(line.content[:-1])
             _register_key(scope_stack, key, _K_SCALAR_BARE, line.number)
-            if (li < len(lines)
-                    and lines[li].heading_depth == 0
-                    and lines[li].raw_text.strip().startswith(">")):
+            if (
+                li < len(lines)
+                and lines[li].heading_depth == 0
+                and lines[li].raw_text.strip().startswith(">")
+            ):
                 bq_parts_key: list[str] = []
                 while li < len(lines):
                     raw = lines[li].raw_text.strip()
@@ -513,8 +565,9 @@ def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
                         li += 1
                     else:
                         break
-                yield StreamEvent("FIELD", key=key,
-                                  value="\n".join(bq_parts_key).strip("\n"))
+                yield StreamEvent(
+                    "FIELD", key=key, value="\n".join(bq_parts_key).strip("\n")
+                )
             else:
                 yield StreamEvent("FIELD", key=key, value="")
 
@@ -623,7 +676,7 @@ async def to_lines(
             if line.endswith("\r"):
                 line = line[:-1]
             yield line
-            buffer = buffer[idx + 1:]
+            buffer = buffer[idx + 1 :]
     if buffer:
         if buffer.endswith("\r"):
             buffer = buffer[:-1]

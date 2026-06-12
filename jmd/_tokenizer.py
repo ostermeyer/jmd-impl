@@ -35,9 +35,8 @@ _BARE_HEADING_RE = re.compile(r"^(#{1,})$")
 
 def is_thematic_break(line: Line) -> bool:
     """Check if a line is a thematic break (``---`` or more hyphens)."""
-    return (
-        line.heading_depth == 0
-        and bool(_THEMATIC_BREAK_RE.match(line.content))
+    return line.heading_depth == 0 and bool(
+        _THEMATIC_BREAK_RE.match(line.content)
     )
 
 
@@ -64,7 +63,7 @@ def _parse_line(number: int, raw: str, text: str) -> Line:
         A Line instance.
     """
     # Fast path: lines not starting with '#' are never headings
-    if text[0] != '#':
+    if text[0] != "#":
         return Line(number, raw, 0, text)
     # Special root markers: #? Label, #! Label
     m = _root_marker_match(text)

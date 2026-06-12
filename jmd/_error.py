@@ -99,12 +99,14 @@ def parse_error(source: str) -> JMDError:
         for item in raw_errors:
             if isinstance(item, dict):
                 item_copy = dict(item)
-                err_items.append(JMDErrorItem(
-                    field=str(item_copy.pop("field", "")),
-                    reason=str(item_copy.pop("reason", "")),
-                    value=str(item_copy.pop("value", "")),
-                    extra=item_copy,
-                ))
+                err_items.append(
+                    JMDErrorItem(
+                        field=str(item_copy.pop("field", "")),
+                        reason=str(item_copy.pop("reason", "")),
+                        value=str(item_copy.pop("value", "")),
+                        extra=item_copy,
+                    )
+                )
 
     return JMDError(
         status=status,

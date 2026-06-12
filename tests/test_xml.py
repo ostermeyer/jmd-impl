@@ -311,7 +311,7 @@ class TestRoundtrip:
         xml = (
             '<root xmlns:w="http://schemas.openxmlformats.org/'
             'wordprocessingml/2006/main">'
-            '<w:body>'
+            "<w:body>"
             '<inner xmlns:c="http://schemas.openxmlformats.org/'
             'drawingml/2006/chart" c:val="x"/>'
             "</w:body>"
@@ -339,6 +339,7 @@ class TestRoundtrip:
             "</root>"
         )
         result = _roundtrip(xml)
+
         # C14N must be identical (same infoset)
         def c14n(b: bytes) -> bytes:
             buf = io.BytesIO()
@@ -352,7 +353,7 @@ class TestRoundtrip:
     def test_ooxml_fragment(self) -> None:
         """Full OOXML fragment from the companion specification."""
         xml = (
-            '<w:document'
+            "<w:document"
             ' xmlns:w="http://schemas.openxmlformats.org/'
             'wordprocessingml/2006/main"'
             ' xmlns:r="http://schemas.openxmlformats.org/'

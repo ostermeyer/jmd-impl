@@ -123,9 +123,7 @@ class JMDSerializer:
             elif isinstance(value, list):
                 lines.append("")
                 lines.append(f"{self._heading(depth + 1)}{k}[]")
-                self._write_array_items(
-                    value, lines, depth + 1
-                )
+                self._write_array_items(value, lines, depth + 1)
                 needs_heading = True
             elif isinstance(value, str) and "\n" in value:
                 # Multiline string → blockquote
@@ -136,8 +134,9 @@ class JMDSerializer:
                 self._write_multiline(value, lines)
                 needs_heading = True  # next scalar needs a heading
             elif needs_heading:
-                lines.append(f"{self._heading(depth + 1)}{k}: "
-                             f"{serialize_scalar(value)}")
+                lines.append(
+                    f"{self._heading(depth + 1)}{k}: {serialize_scalar(value)}"
+                )
             else:
                 lines.append(f"{k}: {serialize_scalar(value)}")
 
@@ -152,9 +151,7 @@ class JMDSerializer:
 
         all_lists = all(isinstance(item, list) for item in lst)
         all_dicts = all(isinstance(item, dict) for item in lst)
-        all_scalars = all(
-            not isinstance(item, (dict, list)) for item in lst
-        )
+        all_scalars = all(not isinstance(item, (dict, list)) for item in lst)
 
         if all_lists:
             for item in lst:
@@ -164,12 +161,12 @@ class JMDSerializer:
             n = len(lst)
             for i, item in enumerate(lst):
                 scalar_fields: dict[str, Any] = {
-                    k: v for k, v in item.items()
+                    k: v
+                    for k, v in item.items()
                     if not isinstance(v, (dict, list))
                 }
                 nested_fields: dict[str, Any] = {
-                    k: v for k, v in item.items()
-                    if isinstance(v, (dict, list))
+                    k: v for k, v in item.items() if isinstance(v, (dict, list))
                 }
                 if scalar_fields:
                     # First field on the '- ' line, rest indented.
@@ -216,11 +213,13 @@ class JMDSerializer:
                 if isinstance(item, dict):
                     d_item = cast(dict[str, Any], item)
                     het_scalar_fields: dict[str, Any] = {
-                        k: v for k, v in d_item.items()
+                        k: v
+                        for k, v in d_item.items()
                         if not isinstance(v, (dict, list))
                     }
                     het_nested_fields: dict[str, Any] = {
-                        k: v for k, v in d_item.items()
+                        k: v
+                        for k, v in d_item.items()
                         if isinstance(v, (dict, list))
                     }
                     pfx = qualifier if needs_qualifier else ""
@@ -238,15 +237,14 @@ class JMDSerializer:
                         lines.append(f"{pfx}-")
                     if het_nested_fields:
                         self._write_object_fields(
-                            het_nested_fields, lines, depth)
+                            het_nested_fields, lines, depth
+                        )
                     needs_qualifier = bool(het_nested_fields)
                 elif isinstance(item, list):
                     # Anonymous sub-array still opens at depth+1; only
                     # the item-qualifier shrinks to same-depth.
                     lines.append(f"{self._heading(depth + 1)}[]")
-                    self._write_array_items(
-                        item, lines, depth + 1
-                    )
+                    self._write_array_items(item, lines, depth + 1)
                     needs_qualifier = True
                 else:
                     pfx = qualifier if needs_qualifier else ""

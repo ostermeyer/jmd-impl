@@ -16,9 +16,7 @@ from typing import Any, Literal
 
 Mode = Literal["data", "schema", "query", "delete"]
 
-_VALID_MODES: frozenset[str] = frozenset(
-    {"data", "schema", "query", "delete"}
-)
+_VALID_MODES: frozenset[str] = frozenset({"data", "schema", "query", "delete"})
 
 
 @dataclass(kw_only=True)

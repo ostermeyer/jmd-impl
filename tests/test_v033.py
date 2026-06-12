@@ -34,9 +34,7 @@ class TestRepeatedHeadingPromotion:
 
     def test_three_occurrences_extend_array(self) -> None:
         """Test that a third repeated heading appends to the promoted array."""
-        src = (
-            "# Doc\n## Op\ntype: rect\n## Op\ntype: text\n## Op\ntype: path\n"
-        )
+        src = "# Doc\n## Op\ntype: rect\n## Op\ntype: text\n## Op\ntype: path\n"
         assert jmd.jmd_to_dict(src) == {
             "Op": [
                 {"type": "rect"},
@@ -52,12 +50,7 @@ class TestRepeatedHeadingPromotion:
 
     def test_nested_repeated_headings_promote(self) -> None:
         """Test that repeated ### row inside ## table promotes to an array."""
-        src = (
-            "# Doc\n"
-            "## table\n"
-            "### row\nh: 32\n"
-            "### row\nh: 28\n"
-        )
+        src = "# Doc\n## table\n### row\nh: 32\n### row\nh: 28\n"
         assert jmd.jmd_to_dict(src) == {
             "table": {"row": [{"h": 32}, {"h": 28}]},
         }
@@ -123,10 +116,10 @@ class TestRepeatedHeadingStreaming:
         """Test that three repeated ## Op produce three OBJECT_START events."""
         src = "# Doc\n## Op\ntype: a\n## Op\ntype: b\n## Op\ntype: c\n"
         events = list(jmd_stream(src))
-        starts = [e for e in events
-                  if e.type == "OBJECT_START" and e.key == "Op"]
-        ends = [e for e in events
-                if e.type == "OBJECT_END" and e.key == "Op"]
+        starts = [
+            e for e in events if e.type == "OBJECT_START" and e.key == "Op"
+        ]
+        ends = [e for e in events if e.type == "OBJECT_END" and e.key == "Op"]
         assert len(starts) == 3
         assert len(ends) == 3
 

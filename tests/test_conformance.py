@@ -107,7 +107,8 @@ _BACKENDS = ["c", "py"]
 
 @pytest.fixture(params=_BACKENDS)
 def backend(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> str:
     """Select the parser/serializer backend for a test run.
 
@@ -161,7 +162,9 @@ def test_parse(
     reason="jmd-spec canonical fixtures not found",
 )
 @pytest.mark.parametrize(
-    ("mode", "jmd_path", "json_path"), _CANONICAL, ids=_CANONICAL_IDS,
+    ("mode", "jmd_path", "json_path"),
+    _CANONICAL,
+    ids=_CANONICAL_IDS,
 )
 def test_serialize(
     backend: str,
@@ -194,7 +197,9 @@ def test_serialize(
     reason="jmd-spec canonical fixtures not found",
 )
 @pytest.mark.parametrize(
-    ("mode", "jmd_path", "json_path"), _CANONICAL, ids=_CANONICAL_IDS,
+    ("mode", "jmd_path", "json_path"),
+    _CANONICAL,
+    ids=_CANONICAL_IDS,
 )
 def test_roundtrip(
     backend: str,
@@ -219,7 +224,9 @@ def test_roundtrip(
     reason="jmd-spec must-fail fixtures not found",
 )
 @pytest.mark.parametrize(
-    ("jmd_path", "err_path"), _MUST_FAIL, ids=_MUST_FAIL_IDS,
+    ("jmd_path", "err_path"),
+    _MUST_FAIL,
+    ids=_MUST_FAIL_IDS,
 )
 def test_must_fail(
     backend: str,
@@ -234,6 +241,7 @@ def test_must_fail(
     """
     del backend  # only used for the test id
     from jmd._parser import JMDParseError
+
     expected = json.loads(err_path.read_text(encoding="utf-8"))
     jmd_text = jmd_path.read_text(encoding="utf-8")
     with pytest.raises(JMDParseError) as exc:

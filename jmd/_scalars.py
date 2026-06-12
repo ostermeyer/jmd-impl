@@ -31,35 +31,35 @@ def parse_scalar(raw: str) -> Any:
         ValueError: If the value contains an unquoted structural prefix.
     """
     # Fast path: check first character to quickly dispatch
-    c0 = raw[0] if raw else '\0'
+    c0 = raw[0] if raw else "\0"
 
     if c0 == '"':
         if raw[-1] == '"' and len(raw) >= 2:
             return _json_loads(raw)
         return raw
 
-    if c0 == 'n' and raw == "null":
+    if c0 == "n" and raw == "null":
         return None
-    if c0 == 't' and raw == "true":
+    if c0 == "t" and raw == "true":
         return True
-    if c0 == 'f' and raw == "false":
+    if c0 == "f" and raw == "false":
         return False
 
     # Number detection: starts with digit or '-' followed by digit
-    if c0.isdigit() or (c0 == '-' and len(raw) > 1 and raw[1].isdigit()):
+    if c0.isdigit() or (c0 == "-" and len(raw) > 1 and raw[1].isdigit()):
         try:
-            if '.' in raw or 'e' in raw or 'E' in raw:
+            if "." in raw or "e" in raw or "E" in raw:
                 return float(raw)
             return int(raw)
         except ValueError:
             pass
-    elif c0 == '-':
+    elif c0 == "-":
         if len(raw) == 1:
             raise ValueError(
                 "Bare '-' as value is ambiguous. Quote the value: \"-\""
             )
 
-    if c0 == '#' or (c0 == '-' and len(raw) > 1 and raw[1] == ' '):
+    if c0 == "#" or (c0 == "-" and len(raw) > 1 and raw[1] == " "):
         for prefix in _STRUCTURAL_PREFIXES:
             if raw.startswith(prefix):
                 raise ValueError(
@@ -116,15 +116,19 @@ def split_kv(content: str) -> tuple[str, str] | None:
                 continue
             if ch == '"':
                 # Closing quote at index i. Look for "[]: " or ": ".
-                if (i + 4 < n
-                        and content[i + 1] == "["
-                        and content[i + 2] == "]"
-                        and content[i + 3] == ":"
-                        and content[i + 4] == " "):
+                if (
+                    i + 4 < n
+                    and content[i + 1] == "["
+                    and content[i + 2] == "]"
+                    and content[i + 3] == ":"
+                    and content[i + 4] == " "
+                ):
                     return content[: i + 3], content[i + 5 :]
-                if (i + 2 < n
-                        and content[i + 1] == ":"
-                        and content[i + 2] == " "):
+                if (
+                    i + 2 < n
+                    and content[i + 1] == ":"
+                    and content[i + 2] == " "
+                ):
                     return content[: i + 1], content[i + 3 :]
                 return None
             i += 1

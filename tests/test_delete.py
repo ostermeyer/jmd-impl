@@ -59,8 +59,7 @@ class TestDeleteParsing:
     def test_labeled_bulk_deletion_object_ids(self) -> None:
         """Test #- Table[] with a label and object IDs."""
         d = parse_delete(
-            "#- Orders[]\n- id: 42\n  status: old\n"
-            "- id: 43\n  status: old"
+            "#- Orders[]\n- id: 42\n  status: old\n- id: 43\n  status: old"
         )
         assert d.is_bulk is True
         assert d.label == "Orders"

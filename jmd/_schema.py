@@ -19,7 +19,7 @@ class SchemaRef:
     """A reference type field in a JMD schema (``-> Label``)."""
 
     key: str
-    ref: str          # Referenced label, e.g. ``'Category'``
+    ref: str  # Referenced label, e.g. ``'Category'``
     optional: bool = False
     readonly: bool = False
 
@@ -32,9 +32,7 @@ class SchemaField:
     base_type: str
     optional: bool = False
     readonly: bool = False
-    enum_values: list[Any] = dc_field(
-        default_factory=list
-    )
+    enum_values: list[Any] = dc_field(default_factory=list)
     format_hint: str | None = None
     default: Any = None
 
@@ -54,9 +52,7 @@ class SchemaArray:
 
     key: str
     item_type: str
-    item_fields: list[Any] = dc_field(
-        default_factory=list
-    )
+    item_fields: list[Any] = dc_field(default_factory=list)
     optional: bool = False
     item_ref: str | None = None  # set when item_type == "ref" ([]-> Label)
 
@@ -116,10 +112,7 @@ class JMDSchema:
         return s
 
     def _required(self, fields: list[Any]) -> list[str]:
-        return [
-            f.key for f in fields
-            if not getattr(f, "optional", False)
-        ]
+        return [f.key for f in fields if not getattr(f, "optional", False)]
 
 
 _FORMAT_HINTS = {"email", "date", "datetime", "uri"}
@@ -142,8 +135,13 @@ def _parse_type_expr(
         ref_label = arr_ref_m.group(1)
         rest = arr_ref_m.group(2).strip().split()
         return (
-            "ref[]", "optional" in rest, "readonly" in rest,
-            [], ref_label, None, None,
+            "ref[]",
+            "optional" in rest,
+            "readonly" in rest,
+            [],
+            ref_label,
+            None,
+            None,
         )
 
     # Reference type: "-> Label [optional] [readonly]"
@@ -152,8 +150,13 @@ def _parse_type_expr(
         ref_label = ref_m.group(1)
         rest = ref_m.group(2).strip().split()
         return (
-            "ref", "optional" in rest, "readonly" in rest,
-            [], ref_label, None, None,
+            "ref",
+            "optional" in rest,
+            "readonly" in rest,
+            [],
+            ref_label,
+            None,
+            None,
         )
 
     # Extract default value ("= value") before splitting on spaces
@@ -161,7 +164,7 @@ def _parse_type_expr(
     default_m = re.search(r"\s*=\s*(\S+)", raw)
     if default_m:
         default = parse_scalar(default_m.group(1))
-        raw = raw[:default_m.start()].strip()
+        raw = raw[: default_m.start()].strip()
 
     # Split remaining into tokens and separate modifiers
     tokens = raw.split()
@@ -208,19 +211,20 @@ def _make_schema_field(
     key: str, type_expr: str
 ) -> SchemaField | SchemaRef | SchemaArray:
     """Parse *type_expr* and return the appropriate schema field object."""
-    (base_type, optional, readonly,
-     enum_values, ref, format_hint, default) = _parse_type_expr(type_expr)
+    (base_type, optional, readonly, enum_values, ref, format_hint, default) = (
+        _parse_type_expr(type_expr)
+    )
     if base_type == "ref[]":
         return SchemaArray(
             key=key, item_type="ref", item_ref=ref, optional=optional
         )
     if ref is not None:
-        return SchemaRef(
-            key=key, ref=ref, optional=optional, readonly=readonly
-        )
+        return SchemaRef(key=key, ref=ref, optional=optional, readonly=readonly)
     return SchemaField(
-        key=key, base_type=base_type,
-        optional=optional, readonly=readonly,
+        key=key,
+        base_type=base_type,
+        optional=optional,
+        readonly=readonly,
         enum_values=enum_values,
         format_hint=format_hint,
         default=default,
@@ -264,9 +268,7 @@ class JMDSchemaParser:
 
         first = self._lines[self._pos]
         if first.heading_depth != 1 or not first.content.startswith("! "):
-            raise ValueError(
-                "Schema document must start with '#! <label>'"
-            )
+            raise ValueError("Schema document must start with '#! <label>'")
 
         label = first.content[2:].strip()
         self._pos += 1
@@ -307,23 +309,32 @@ class JMDSchemaParser:
                     key_part, type_part = kv
                     if key_part.endswith("[]"):
                         key = parse_key(key_part[:-2])
-                        (base_type, optional, _ro,
-                         _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
+                        (base_type, optional, _ro, _ev, _ref, _fh, _dv) = (
+                            _parse_type_expr(type_part)
+                        )
                         if base_type == "object":
                             item_fields = self._parse_schema_dash_item()
-                            fields.append(SchemaArray(
-                                key=key, item_type="object",
-                                item_fields=item_fields, optional=optional,
-                            ))
+                            fields.append(
+                                SchemaArray(
+                                    key=key,
+                                    item_type="object",
+                                    item_fields=item_fields,
+                                    optional=optional,
+                                )
+                            )
                         else:
-                            fields.append(SchemaArray(
-                                key=key, item_type=base_type,
-                                optional=optional,
-                            ))
+                            fields.append(
+                                SchemaArray(
+                                    key=key,
+                                    item_type=base_type,
+                                    optional=optional,
+                                )
+                            )
                     else:
                         fields.append(
                             _make_schema_field(
-                                parse_key(key_part), type_part,
+                                parse_key(key_part),
+                                type_part,
                             )
                         )
 
@@ -331,15 +342,17 @@ class JMDSchemaParser:
                 else:
                     key = parse_key(content)
                     sub_fields = self._parse_schema_body(depth + 1)
-                    fields.append(SchemaObject(
-                        key=key, fields=sub_fields,
-                    ))
+                    fields.append(
+                        SchemaObject(
+                            key=key,
+                            fields=sub_fields,
+                        )
+                    )
                 continue
 
             # Bare `-` or `- key: type` (item template for preceding array)
             if line.heading_depth == 0 and (
-                line.content == "-"
-                or line.content.startswith("- ")
+                line.content == "-" or line.content.startswith("- ")
             ):
                 item_fields = self._parse_schema_dash_item()
                 if fields and isinstance(fields[-1], SchemaArray):
@@ -355,16 +368,21 @@ class JMDSchemaParser:
                     self._advance()
                     if key_part.endswith("[]"):
                         key = parse_key(key_part[:-2])
-                        (base_type, optional, _ro,
-                         _ev, _ref, _fh, _dv) = _parse_type_expr(type_part)
-                        fields.append(SchemaArray(
-                            key=key, item_type=base_type,
-                            optional=optional,
-                        ))
+                        (base_type, optional, _ro, _ev, _ref, _fh, _dv) = (
+                            _parse_type_expr(type_part)
+                        )
+                        fields.append(
+                            SchemaArray(
+                                key=key,
+                                item_type=base_type,
+                                optional=optional,
+                            )
+                        )
                     else:
                         fields.append(
                             _make_schema_field(
-                                parse_key(key_part), type_part,
+                                parse_key(key_part),
+                                type_part,
                             )
                         )
                     continue
@@ -438,6 +456,7 @@ class JMDSchemaParser:
 # JSON Schema <-> JMD Schema conversion
 # ---------------------------------------------------------------------------
 
+
 def _jmd_type_expr(
     prop: dict[str, Any], key: str, required_keys: set[str]
 ) -> str:
@@ -487,9 +506,7 @@ def _json_schema_props_to_jmd(
             if item_type == "object":
                 sub_props = cast(dict[str, Any], items.get("properties", {}))
                 sub_req = set(cast(list[str], items.get("required", [])))
-                lines.append(
-                    f"{heading}{q_key}[]: object{optional_mark}"
-                )
+                lines.append(f"{heading}{q_key}[]: object{optional_mark}")
                 if sub_props:
                     # Write item template with indentation continuation
                     first = True
@@ -503,9 +520,7 @@ def _json_schema_props_to_jmd(
                         else:
                             lines.append(f"  {iq_key}: {itype_expr}")
             else:
-                lines.append(
-                    f"{heading}{q_key}[]: {item_type}{optional_mark}"
-                )
+                lines.append(f"{heading}{q_key}[]: {item_type}{optional_mark}")
         else:
             type_expr = _jmd_type_expr(prop, key, required)
             lines.append(f"{prefix}{heading}{q_key}: {type_expr}")
