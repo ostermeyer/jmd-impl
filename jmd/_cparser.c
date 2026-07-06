@@ -407,7 +407,9 @@ tokenize(const char *source, Py_ssize_t source_len, LineArray *lines,
         } else {
             const char *hcontent;
             Py_ssize_t hcontent_len;
-            int hd = detect_heading(text, text_len, &hcontent, &hcontent_len);
+            int hd = (text == line_start)
+                ? detect_heading(text, text_len, &hcontent, &hcontent_len)
+                : 0;
             if (hd > 0) {
                 ln.heading_depth = hd;
                 ln.content = hcontent;
@@ -1016,6 +1018,21 @@ parse_object_body(ParserState *st, int depth)
         /* Non-heading line (hd == 0) */
         const char *content = line->content;
         Py_ssize_t content_len = line->content_len;
+
+        /* §11.2: object-body fields live at column 0. A leading indent
+           here is an INDENT with no open array — prose, not a field. */
+        if (line->raw_len > 0
+            && (line->raw[0] == ' ' || line->raw[0] == '\t')) {
+            PyObject *ek = PyUnicode_FromStringAndSize("", 0);
+            if (ek) {
+                raise_jmd_parse_error("prose_in_body", line->number,
+                                      ek, NULL, NULL);
+                Py_DECREF(ek);
+            }
+            Py_DECREF(kinds);
+            Py_DECREF(obj);
+            return NULL;
+        }
 
         /* Find ": " using memchr */
         Py_ssize_t colon_pos = find_colon_space(content, content_len);

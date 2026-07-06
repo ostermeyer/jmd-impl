@@ -62,8 +62,9 @@ def _parse_line(number: int, raw: str, text: str) -> Line:
     Returns:
         A Line instance.
     """
-    # Fast path: lines not starting with '#' are never headings
-    if text[0] != "#":
+    # §11.2: a heading marker is structural only at column 0. An indented
+    # '#' is not a heading — leading whitespace is a significant INDENT.
+    if raw[:1] != "#":
         return Line(number, raw, 0, text)
     # Special root markers: #? Label, #! Label
     m = _root_marker_match(text)

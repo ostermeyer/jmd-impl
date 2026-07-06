@@ -62,7 +62,7 @@ class JMDParseError(ValueError):
 
 
 _MODE_MARKER_RE = re.compile(r"^#[?!\-]\s")
-_ROOT_LINE_RE = re.compile(r"^[ \t]*#", re.MULTILINE)
+_ROOT_LINE_RE = re.compile(r"^#", re.MULTILINE)
 
 
 def _check_single_root(lines: list[Line], root_index: int) -> None:
@@ -618,6 +618,13 @@ class JMDParser:
             # Non-heading line (hd == 0)
             content = line.content
             line_no = line.number
+
+            # §11.2: object-body fields live at column 0. A leading indent
+            # here is an INDENT with no open array — prose, not a field.
+            if line.raw_text[:1] in (" ", "\t"):
+                raise JMDParseError(
+                    kind="prose_in_body", line=line_no, key=""
+                )
 
             # Bare field: key: value (or key: with blockquote)
             if ": " in content:
