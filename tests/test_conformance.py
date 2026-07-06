@@ -149,7 +149,7 @@ def test_parse(
     — the tolerance/ tree carries its own canonical mode in the fixture.
     """
     del backend
-    jmd_text = jmd_path.read_text(encoding="utf-8", newline="")
+    jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     env = jmd.parse(jmd_text)
     assert env.value == expected
@@ -179,7 +179,7 @@ def test_serialize(
     the canonical round-trip path.
     """
     del backend, mode
-    jmd_text = jmd_path.read_text(encoding="utf-8", newline="")
+    jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     env = jmd.parse(jmd_text)
     # Sanity check the envelope before serializing — guards against
@@ -209,7 +209,7 @@ def test_roundtrip(
 ) -> None:
     """Parse → serialize → parse preserves the envelope (§3.6.3)."""
     del backend, mode
-    jmd_text = jmd_path.read_text(encoding="utf-8", newline="")
+    jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     env1 = jmd.parse(jmd_text)
     env2 = jmd.parse(jmd.serialize(env1))
@@ -243,6 +243,8 @@ def test_must_fail(
     from jmd._parser import JMDParseError
 
     expected = json.loads(err_path.read_text(encoding="utf-8"))
+    # Read raw (no newline translation) so §11.2 line-ending fixtures
+    # (lone-CR) reach the parser; parse/serialize/roundtrip normalize CRLF.
     jmd_text = jmd_path.read_text(encoding="utf-8", newline="")
     with pytest.raises(JMDParseError) as exc:
         jmd.parse(jmd_text)
