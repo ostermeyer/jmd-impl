@@ -282,6 +282,67 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
     return ok;
 }
 
+/* True if a bare string begins with a JMD key followed by ": " — it
+   would be reparsed as an object item in "- " position (§6.2). Mirrors
+   the parser's find_kv_split / _KV_RE. */
+static int
+ser_looks_like_kv(const char *s, Py_ssize_t len)
+{
+    if (len < 3) return 0;
+    if (s[0] == '"') {
+        Py_ssize_t i = 1;
+        while (i < len) {
+            if (s[i] == '\\') { i += 2; continue; }
+            if (s[i] == '"')
+                return (i + 2 < len && s[i + 1] == ':' && s[i + 2] == ' ');
+            i++;
+        }
+        return 0;
+    }
+    Py_ssize_t i = 0;
+    while (i < len) {
+        char c = s[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '_' || c == '-') {
+            i++;
+            continue;
+        }
+        break;
+    }
+    if (i == 0) return 0;
+    return (i + 1 < len && s[i] == ':' && s[i + 1] == ' ');
+}
+
+/* §6.1/§6.2 quoting triggers specific to array *item* position: the
+   field-position triggers, plus a key:value shape and significant
+   leading/trailing whitespace (§11.2). */
+static int
+ser_needs_quote_item(const char *s, Py_ssize_t len)
+{
+    if (ser_needs_quote(s, len)) return 1;
+    if (len > 0 && (s[0] == ' ' || s[0] == '\t'
+                    || s[len - 1] == ' ' || s[len - 1] == '\t'))
+        return 1;
+    if (ser_looks_like_kv(s, len)) return 1;
+    return 0;
+}
+
+/* Write a scalar in array *item* position (after "- "). Strings get the
+   extended item-position quoting; non-strings defer to ser_write_scalar. */
+static int
+ser_write_scalar_item(OutBuf *ob, PyObject *value)
+{
+    if (PyUnicode_Check(value)) {
+        const char *s = PyUnicode_AsUTF8(value);
+        if (!s) return 0;
+        Py_ssize_t slen = (Py_ssize_t)strlen(s);
+        if (ser_needs_quote_item(s, slen))
+            return ser_write_quoted(ob, s, slen);
+        return outbuf_append(ob, s, slen);
+    }
+    return ser_write_scalar(ob, value);
+}
+
 /* ------------------------------------------------------------------ */
 /* Multiline strings -> blockquote                                     */
 /* ------------------------------------------------------------------ */
@@ -441,7 +502,7 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
         /* All scalars -> "- value" lines */
         for (Py_ssize_t i = 0; i < n; i++) {
             if (!outbuf_append(ob, "\n- ", 3)) return 0;
-            if (!ser_write_scalar(ob, PyList_GET_ITEM(list, i))) return 0;
+            if (!ser_write_scalar_item(ob, PyList_GET_ITEM(list, i))) return 0;
         }
         return 1;
     }
@@ -620,7 +681,7 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 if (!outbuf_heading(ob, depth)) return 0;
             }
             if (!outbuf_append(ob, "- ", 2)) return 0;
-            if (!ser_write_scalar(ob, item)) return 0;
+            if (!ser_write_scalar_item(ob, item)) return 0;
             needs_qualifier = 0;
         }
     }

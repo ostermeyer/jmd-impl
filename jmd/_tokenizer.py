@@ -100,7 +100,20 @@ def tokenize(source: str) -> list[Line]:
     _result_append = result.append
     _line = Line
     _pl = _parse_line
-    for i, raw in enumerate(source.splitlines()):
+    for i, seg in enumerate(source.splitlines(keepends=True)):
+        # Strip the line terminator directly (fast path for LF / CRLF).
+        # §11.2: a lone CR (bare \r, not part of \r\n) is a lexical parse
+        # error — caught inline in the pass that forms lines, never a scan.
+        if seg.endswith("\n"):
+            raw = seg[:-2] if seg.endswith("\r\n") else seg[:-1]
+        elif seg.endswith("\r"):
+            from ._parser import JMDParseError
+            raise JMDParseError(
+                kind="lone_carriage_return", line=i + 1, key=""
+            )
+        else:
+            end = seg.splitlines()
+            raw = end[0] if end else ""
         text = raw.strip()
         if text:
             _result_append(_pl(i + 1, raw, text))

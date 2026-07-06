@@ -14,6 +14,12 @@ _json_loads = json.loads
 # Section 5a: structural prefixes that must never appear unquoted in a value.
 _STRUCTURAL_PREFIXES = ("# ", "- ")
 
+# §6.2: in array *item* position (after ``- ``) a bare string shaped like
+# ``key: value`` — a bare or JSON-quoted key immediately followed by ``: `` —
+# is reparsed as an object item, not a scalar. Such items must be quoted.
+# Mirrors ``_KV_RE`` in :mod:`jmd._parser`.
+_ITEM_KV_RE = re.compile(r'^(?:[a-zA-Z0-9_\-]+|"(?:[^"\\]|\\.)*"): ')
+
 
 def parse_scalar(raw: str) -> Any:
     """Parse a raw scalar string into a Python value.
@@ -190,6 +196,33 @@ def serialize_scalar(value: Any) -> str:
     if _needs_quote(s) or s.startswith('"') or "\n" in s or "\t" in s:
         return json.dumps(s, ensure_ascii=False)
     return s
+
+
+def serialize_scalar_item(value: Any) -> str:
+    """Serialize a scalar for array *item* position (§6.1/§6.2).
+
+    Identical to :func:`serialize_scalar` for non-string values. For
+    strings it adds the quoting triggers that item position needs but
+    field position does not: a ``key: value`` shape (else reparsed as an
+    object item, §6.2) and significant leading/trailing whitespace
+    (§11.2). The structural, type-ambiguous, quote and control-character
+    triggers are shared with :func:`serialize_scalar` via
+    :func:`_needs_quote`.
+    """
+    if isinstance(value, str):
+        s = value
+        if (
+            _needs_quote(s)
+            or s.startswith('"')
+            or "\n" in s
+            or "\t" in s
+            or s[:1].isspace()
+            or s[-1:].isspace()
+            or _ITEM_KV_RE.match(s)
+        ):
+            return json.dumps(s, ensure_ascii=False)
+        return s
+    return serialize_scalar(value)
 
 
 def quote_key(key: str) -> str:

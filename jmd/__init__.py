@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """JMD (JSON Markdown) — Parser, Serializer, and Tooling.
 
-Implements JMD Specification v0.3.3 — heading-scope model with blockquotes
+Implements JMD Specification v0.3.5 — heading-scope model with blockquotes,
 and indentation continuation.
 
 Usage:
@@ -39,7 +39,10 @@ from ._delete import JMDDelete, JMDDeleteParser
 from ._envelope import Envelope, Mode, mode_to_label_prefix
 from ._error import JMDError, JMDErrorItem, is_error_document, parse_error
 from ._html import JMDHTMLRenderer
-from ._parser import JMDParser
+from ._parser import (
+    JMDParser,
+    _check_single_root,
+)
 from ._query import (
     Condition,
     JMDQuery,
@@ -142,8 +145,11 @@ def _parse_with_c_body(source: str) -> Envelope:
     root heading onwards is then passed to the C ``parse`` function.
     Both parts are assembled into a canonical :class:`Envelope`.
     """
+    if source[:1] == chr(0xFEFF):
+        source = source[1:]
     parser = JMDParser()
     mode, label, frontmatter, body_line = parser.parse_header(source)
+    _check_single_root(parser._lines, parser._pos)
     body = "\n".join(source.splitlines()[body_line - 1 :])
     value = _c_parse_body(body)
     return Envelope(

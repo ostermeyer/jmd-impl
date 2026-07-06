@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Schema Documents (#! Label) — v0.3.3."""
+"""JMD Schema Documents (#! Label) — v0.3.5."""
 
 from __future__ import annotations
 
@@ -232,7 +232,7 @@ def _make_schema_field(
 
 
 class JMDSchemaParser:
-    """Parses JMD schema documents (#!) using the v0.3.3 heading-scope model."""
+    """Parses JMD schema documents (#!) using the v0.3.5 heading-scope model."""
 
     def __init__(self) -> None:
         self._lines: list[Line] = []

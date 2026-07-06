@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Serializer (v0.3.3 — indentation continuation, blockquote multiline)."""
+"""JMD Serializer (v0.3.5 — indentation continuation, blockquote multiline)."""
 
 from __future__ import annotations
 
 from typing import Any, cast
 
-from ._scalars import quote_key, serialize_scalar
+from ._scalars import quote_key, serialize_scalar, serialize_scalar_item
 
 
 def validate_label(label: str) -> str:
@@ -60,7 +60,7 @@ def _split_label(label: str) -> tuple[str, str]:
 
 
 class JMDSerializer:
-    r"""Serializes Python dicts/lists to JMD v0.3.3 format.
+    r"""Serializes Python dicts/lists to JMD v0.3.5 format.
 
     Uses indentation continuation for array object items and
     blockquotes for multiline string values.
@@ -192,7 +192,7 @@ class JMDSerializer:
                         lines.append("#" * depth)
         elif all_scalars:
             for item in lst:
-                lines.append(f"- {serialize_scalar(item)}")
+                lines.append(f"- {serialize_scalar_item(item)}")
         else:
             # Heterogeneous array — items mixing scalars, dicts, sub-arrays.
             #
@@ -248,5 +248,5 @@ class JMDSerializer:
                     needs_qualifier = True
                 else:
                     pfx = qualifier if needs_qualifier else ""
-                    lines.append(f"{pfx}- {serialize_scalar(item)}")
+                    lines.append(f"{pfx}- {serialize_scalar_item(item)}")
                     needs_qualifier = False

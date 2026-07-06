@@ -32,9 +32,9 @@
 #define KEY_CACHE_MASK (KEY_CACHE_SIZE - 1)
 
 typedef struct {
-    const char *raw;
+    char       *raw;          /* owned copy of the key bytes (see intern_key) */
     Py_ssize_t  len;
-    PyObject   *pyobj;        /* borrowed ref held alive by the cache */
+    PyObject   *pyobj;        /* owned ref (extra INCREF held by the cache)  */
 } KeyCacheEntry;
 
 static KeyCacheEntry key_cache[KEY_CACHE_SIZE];
@@ -224,9 +224,18 @@ intern_key(const char *raw, Py_ssize_t len)
     }
     PyObject *obj = PyUnicode_FromStringAndSize(raw, len);
     if (!obj) return NULL;
-    /* Evict old entry */
+    /* Own a private copy of the key bytes. *raw* points into the parse's
+       source buffer, which does NOT outlive this parse; storing it borrowed
+       leaves e->raw dangling into freed memory, and a later parse's memcmp
+       above then reads freed/reused heap — a use-after-free that crashes
+       once another allocation (e.g. a debugger run) reclaims that memory. */
+    char *keycopy = (char *)PyMem_Malloc((size_t)(len > 0 ? len : 1));
+    if (!keycopy) { Py_DECREF(obj); PyErr_NoMemory(); return NULL; }
+    if (len > 0) memcpy(keycopy, raw, (size_t)len);
+    /* Evict old entry (Py_XDECREF and PyMem_Free are both NULL-safe). */
     Py_XDECREF(e->pyobj);
-    e->raw = raw;
+    PyMem_Free(e->raw);
+    e->raw = keycopy;
     e->len = len;
     e->pyobj = obj;
     Py_INCREF(obj);   /* one ref for cache, one for caller */
@@ -1715,9 +1724,34 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
         if (line->heading_depth > child_depth)
             break;
 
-        /* Thematic break: stop */
-        if (is_thematic_break(line))
+        /* §8.6: a `---` inside an array body is decoration, not an item
+         * terminator. If an indented continuation field follows (after
+         * optional blank lines), it still belongs to this open item —
+         * skip the break and keep consuming into the same item. */
+        if (is_thematic_break(line)) {
+            Py_ssize_t peek = pos + 1;
+            while (peek < lines_len
+                   && lines->items[peek].heading_depth == -1)
+                peek++;
+            if (peek < lines_len) {
+                JMDLine *pl = &lines->items[peek];
+                if (pl->raw_len >= 3 && pl->raw[0] == ' '
+                    && pl->raw[1] == ' ') {
+                    const char *ps = pl->raw;
+                    Py_ssize_t pslen = pl->raw_len;
+                    while (pslen > 0 && *ps == ' ') { ps++; pslen--; }
+                    while (pslen > 0 && (ps[pslen - 1] == ' '
+                           || ps[pslen - 1] == '\t'
+                           || ps[pslen - 1] == '\r'))
+                        pslen--;
+                    if (find_kv_split(ps, pslen) >= 0) {
+                        pos = peek;
+                        continue;
+                    }
+                }
+            }
             break;
+        }
 
         /* Non-heading (hd == 0) */
         if (line->heading_depth == 0) {
@@ -1840,6 +1874,27 @@ jmd_parse(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_ValueError,
                         "Expected '# <label>' or '# []'");
         return NULL;
+    }
+
+    /* §3.6.2/§11.2: an indented line left unconsumed by the body parse
+       is prose, not silently-dropped data — a hard parse error. */
+    if (result) {
+        Py_ssize_t p = st.pos;
+        while (p < lines.len && lines.items[p].heading_depth == -1)
+            p++;
+        if (p < lines.len && lines.items[p].raw_len > 0
+            && lines.items[p].raw[0] == ' ') {
+            PyObject *emptykey = PyUnicode_FromStringAndSize("", 0);
+            if (emptykey) {
+                raise_jmd_parse_error("prose_in_body",
+                                      lines.items[p].number,
+                                      emptykey, NULL, NULL);
+                Py_DECREF(emptykey);
+            }
+            Py_DECREF(result);
+            linearray_free(&lines);
+            return NULL;
+        }
     }
 
     linearray_free(&lines);

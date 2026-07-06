@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Parser (v0.3.3).
+"""JMD Parser (v0.3.5).
 
 Implements the heading-scope model with blockquote and indentation
 continuation support.
@@ -59,6 +59,30 @@ class JMDParseError(ValueError):
         if message is None:
             message = f"Line {line}: {kind} for key {key!r}"
         super().__init__(message)
+
+
+_MODE_MARKER_RE = re.compile(r"^#[?!\-]\s")
+
+
+def _check_single_root(lines: list[Line], root_index: int) -> None:
+    """§18.0 One-Document Rule — only one root (depth-1) heading.
+
+    A second *labelled* depth-1 heading is ``second_root_heading``; a
+    depth-1 mode marker (``#- / #? / #!``) mid-document is
+    ``mode_marker_mid_document``. An anonymous ``#`` at depth 1 is a
+    level-pop marker (§8.6), not a second root — permitted.
+    """
+    for i in range(root_index + 1, len(lines)):
+        ln = lines[i]
+        if ln.heading_depth != 1 or ln.content == "":
+            continue
+        if _MODE_MARKER_RE.match(ln.raw_text.strip()):
+            raise JMDParseError(
+                kind="mode_marker_mid_document", line=ln.number, key=""
+            )
+        raise JMDParseError(
+            kind="second_root_heading", line=ln.number, key=""
+        )
 
 
 def _is_object_item_content(content: str) -> bool:
@@ -150,7 +174,7 @@ def _is_indent_field(raw_text: str) -> tuple[bool, str, str] | None:
 
 
 class JMDParser:
-    r"""Parses JMD v0.3.3 documents into Python dicts/lists.
+    r"""Parses JMD v0.3.5 documents into Python dicts/lists.
 
     Uses a scope stack driven by heading depth. Supports:
     - Blockquote multiline strings (> prefix)
@@ -361,7 +385,10 @@ class JMDParser:
         Raises:
             ValueError: If the document is empty or has an invalid root marker.
         """
+        if source[:1] == chr(0xFEFF):
+            source = source[1:]
         mode, label, frontmatter, _body_line = self.parse_header(source)
+        _check_single_root(self._lines, self._pos)
         # parse_header left _lines and _pos positioned at the root heading.
         first = self._lines[self._pos]
         if first.content == "[]" or first.content.endswith("[]"):
@@ -373,6 +400,18 @@ class JMDParser:
             self._pos += 1
             value = self._parse_object_body(depth=1)
 
+        # §3.6.2/§11.2: an indented line left unconsumed by the body
+        # parse is prose, not silently-dropped data — a hard parse error.
+        _pos = self._pos
+        _lines = self._lines
+        while _pos < len(_lines) and _lines[_pos].heading_depth == -1:
+            _pos += 1
+        if _pos < len(_lines) and _lines[_pos].raw_text[:1] == " ":
+            raise JMDParseError(
+                kind="prose_in_body",
+                line=_lines[_pos].number,
+                key="",
+            )
         return Envelope(
             mode=mode,
             label=label,
@@ -1012,8 +1051,25 @@ class JMDParser:
             if line.heading_depth > child_depth:
                 break
 
-            # Thematic break: end current item.
+            # §8.6: a `---` inside an array body is decoration, not an
+            # item terminator. If an indented continuation field follows
+            # (after optional blank lines), it still belongs to this open
+            # item — skip the break and keep consuming into the same item.
             if is_thematic_break(line):
+                peek = pos + 1
+                while peek < lines_len and lines[peek].heading_depth == -1:
+                    peek += 1
+                if peek < lines_len:
+                    praw = lines[peek].raw_text
+                    if (
+                        len(praw) >= 3
+                        and praw[0] == " "
+                        and praw[1] == " "
+                        and _kv_match(praw.lstrip(" "))
+                    ):
+                        pos = peek
+                        self._pos = pos
+                        continue
                 break
 
             # Next item marker: stop
