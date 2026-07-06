@@ -62,6 +62,7 @@ class JMDParseError(ValueError):
 
 
 _MODE_MARKER_RE = re.compile(r"^#[?!\-]\s")
+_ROOT_LINE_RE = re.compile(r"^[ \t]*#", re.MULTILINE)
 
 
 def _check_single_root(lines: list[Line], root_index: int) -> None:
@@ -83,6 +84,50 @@ def _check_single_root(lines: list[Line], root_index: int) -> None:
         raise JMDParseError(
             kind="second_root_heading", line=ln.number, key=""
         )
+
+
+def _scan_header(
+    source: str,
+) -> tuple[dict[str, Any], Mode, str, str, int]:
+    """Lightweight header extraction for the C fast path (§3.5).
+
+    Consumes only the frontmatter prefix — never the body — and returns
+    ``(frontmatter, mode, label, body, body_line)`` where ``body`` is the
+    raw source from the root heading onward and ``body_line`` is its
+    1-based source line (so the C body parser reports document-absolute
+    error lines via its ``line_offset``). The boundary is the first line
+    whose first non-whitespace char is ``#``: no key can begin with ``#``
+    (§4), so this unambiguously ends the lenient frontmatter zone.
+    Validation of the root (depth, second root, lone CR, …) is the body
+    parser's job.
+    """
+    if source[:1] == "﻿":
+        source = source[1:]
+    if not source:
+        raise ValueError("Empty document")
+    m = _ROOT_LINE_RE.search(source)
+    if m is None:
+        raise ValueError("No root heading found")
+    body_offset = m.start()
+    fm_text = source[:body_offset]
+    body_line = fm_text.count("\n") + 1
+
+    fm_parser = JMDParser()
+    fm_parser._lines = tokenize(fm_text)
+    fm_parser._pos = 0
+    fm_parser.frontmatter = {}
+    fm_parser._parse_frontmatter()
+    frontmatter = dict(fm_parser.frontmatter)
+
+    body = source[body_offset:]
+    # mode/label from the root heading line; strip CR for this extraction
+    # only — the raw body keeps its bytes so the C parser catches a lone CR.
+    root_line = body.split("\n", 1)[0].replace("\r", "")
+    root_tok = tokenize(root_line)
+    if not root_tok or root_tok[0].heading_depth != 1:
+        raise ValueError(f"Line {body_line}: expected '# <label>' or '# []'")
+    mode, label = split_mode_label(root_tok[0].content)
+    return frontmatter, mode, label, body, body_line
 
 
 def _is_object_item_content(content: str) -> bool:

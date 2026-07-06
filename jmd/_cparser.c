@@ -346,10 +346,11 @@ detect_heading(const char *text, Py_ssize_t text_len,
 }
 
 static int
-tokenize(const char *source, Py_ssize_t source_len, LineArray *lines)
+tokenize(const char *source, Py_ssize_t source_len, LineArray *lines,
+         int line_offset)
 {
     Py_ssize_t pos = 0;
-    int lineno = 0;
+    int lineno = line_offset;
 
     while (pos <= source_len) {
         lineno++;
@@ -368,6 +369,19 @@ tokenize(const char *source, Py_ssize_t source_len, LineArray *lines)
         Py_ssize_t raw_len = line_len;
         if (raw_len > 0 && line_start[raw_len - 1] == '\r')
             raw_len--;
+
+        /* §11.2: a lone CR (any \r other than the trailing \r of a CRLF
+           pair, stripped above) is a lexical parse error, caught in the
+           same pass that forms lines. */
+        if (memchr(line_start, '\r', (size_t)raw_len)) {
+            PyObject *ek = PyUnicode_FromStringAndSize("", 0);
+            if (ek) {
+                raise_jmd_parse_error("lone_carriage_return", lineno,
+                                      ek, NULL, NULL);
+                Py_DECREF(ek);
+            }
+            return 0;
+        }
 
         /* Strip leading and trailing whitespace for 'text' */
         const char *text = line_start;
@@ -1807,8 +1821,9 @@ jmd_parse(PyObject *self, PyObject *args)
     (void)self;
     const char *source;
     Py_ssize_t source_len;
+    int line_offset = 0;
 
-    if (!PyArg_ParseTuple(args, "s#", &source, &source_len))
+    if (!PyArg_ParseTuple(args, "s#|i", &source, &source_len, &line_offset))
         return NULL;
 
     LineArray lines;
@@ -1817,7 +1832,7 @@ jmd_parse(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!tokenize(source, source_len, &lines)) {
+    if (!tokenize(source, source_len, &lines, line_offset)) {
         linearray_free(&lines);
         return NULL;
     }
@@ -1876,24 +1891,39 @@ jmd_parse(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    /* §3.6.2/§11.2: an indented line left unconsumed by the body parse
-       is prose, not silently-dropped data — a hard parse error. */
+    /* §18.0/§3.6.2: inspect the first line the body parse left unconsumed.
+       A labelled depth-1 heading is a second root (or a mid-document mode
+       marker, #? / #! / #-); an indented line is prose. All hard errors. */
     if (result) {
         Py_ssize_t p = st.pos;
         while (p < lines.len && lines.items[p].heading_depth == -1)
             p++;
-        if (p < lines.len && lines.items[p].raw_len > 0
-            && lines.items[p].raw[0] == ' ') {
-            PyObject *emptykey = PyUnicode_FromStringAndSize("", 0);
-            if (emptykey) {
-                raise_jmd_parse_error("prose_in_body",
-                                      lines.items[p].number,
-                                      emptykey, NULL, NULL);
-                Py_DECREF(emptykey);
+        if (p < lines.len) {
+            JMDLine *lo = &lines.items[p];
+            const char *err = NULL;
+            if (lo->heading_depth == 1 && lo->content_len > 0) {
+                const char *r = lo->raw;
+                Py_ssize_t rl = lo->raw_len;
+                while (rl > 0 && (*r == ' ' || *r == '\t')) { r++; rl--; }
+                if (rl >= 3 && r[0] == '#'
+                    && (r[1] == '?' || r[1] == '!' || r[1] == '-')
+                    && (r[2] == ' ' || r[2] == '\t'))
+                    err = "mode_marker_mid_document";
+                else
+                    err = "second_root_heading";
+            } else if (lo->raw_len > 0 && lo->raw[0] == ' ') {
+                err = "prose_in_body";
             }
-            Py_DECREF(result);
-            linearray_free(&lines);
-            return NULL;
+            if (err) {
+                PyObject *ek = PyUnicode_FromStringAndSize("", 0);
+                if (ek) {
+                    raise_jmd_parse_error(err, lo->number, ek, NULL, NULL);
+                    Py_DECREF(ek);
+                }
+                Py_DECREF(result);
+                linearray_free(&lines);
+                return NULL;
+            }
         }
     }
 
