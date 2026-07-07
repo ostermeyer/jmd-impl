@@ -107,7 +107,7 @@ def _scan_header(
         raise ValueError("Empty document")
     m = _ROOT_LINE_RE.search(source)
     if m is None:
-        raise ValueError("No root heading found")
+        raise JMDParseError(kind="no_root_heading", line=1, key="")
     body_offset = m.start()
     fm_text = source[:body_offset]
     body_line = fm_text.count("\n") + 1
@@ -397,7 +397,7 @@ class JMDParser:
         self._parse_frontmatter()
 
         if self._pos >= len(self._lines):
-            raise ValueError("No root heading found")
+            raise JMDParseError(kind="no_root_heading", line=1, key="")
 
         first = self._lines[self._pos]
         if first.heading_depth != 1:

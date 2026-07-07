@@ -1878,8 +1878,13 @@ jmd_parse(PyObject *self, PyObject *args)
     }
 
     if (st.pos >= lines.len) {
+        PyObject *ek = PyUnicode_FromStringAndSize("", 0);
+        if (ek) {
+            raise_jmd_parse_error("no_root_heading", line_offset + 1,
+                                  ek, NULL, NULL);
+            Py_DECREF(ek);
+        }
         linearray_free(&lines);
-        PyErr_SetString(PyExc_ValueError, "No root heading found");
         return NULL;
     }
 

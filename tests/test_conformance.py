@@ -149,7 +149,13 @@ def test_parse(
     — the tolerance/ tree carries its own canonical mode in the fixture.
     """
     del backend
-    jmd_text = jmd_path.read_text(encoding="utf-8")
+    if "crlf" in jmd_path.stem:
+        # §11.2 CRLF-tolerance fixtures must reach the parser byte-exact,
+        # not LF-normalized — else they only exercise the LF path.
+        with jmd_path.open(encoding="utf-8", newline="") as fh:
+            jmd_text = fh.read()
+    else:
+        jmd_text = jmd_path.read_text(encoding="utf-8")
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     env = jmd.parse(jmd_text)
     assert env.value == expected
