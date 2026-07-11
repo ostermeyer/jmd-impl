@@ -15,7 +15,10 @@ from jmd._parser import JMDParseError
 
 
 @pytest.fixture(params=["c", "py"])
-def backend(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+def backend(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> str:
     if request.param == "py":
         monkeypatch.setattr(jmd, "_HAS_CPARSER", False)
     return request.param

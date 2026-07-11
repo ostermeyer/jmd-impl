@@ -251,7 +251,8 @@ def test_must_fail(
     expected = json.loads(err_path.read_text(encoding="utf-8"))
     # Read raw (no newline translation) so §11.2 line-ending fixtures
     # (lone-CR) reach the parser; parse/serialize/roundtrip normalize CRLF.
-    with jmd_path.open(encoding="utf-8", newline="") as fh:  # py<3.13-kompatibel
+    # py<3.13-kompatibel
+    with jmd_path.open(encoding="utf-8", newline="") as fh:
             jmd_text = fh.read()
     with pytest.raises(JMDParseError) as exc:
         jmd.parse(jmd_text)

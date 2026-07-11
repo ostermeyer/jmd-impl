@@ -66,6 +66,10 @@ select = [
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.per-file-ignores]
+# Test functions don't need docstrings; everything else stays strict.
+"tests/*" = ["D"]
+
 [tool.mypy]
 strict = true
 
