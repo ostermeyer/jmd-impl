@@ -491,3 +491,42 @@ def test_q6_generator_quotes_significant_whitespace(
     serialized = serializer_surface.serialize(envelope)
     assert serialized == expected
     assert parser_surface.parse(serialized) == envelope
+
+
+@pytest.mark.parametrize(
+    "envelope",
+    (
+        pytest.param(
+            jmd.Envelope(
+                mode="data",
+                label="X",
+                value={"v": "before\x00after"},
+            ),
+            id="object-value",
+        ),
+        pytest.param(
+            jmd.Envelope(
+                mode="data",
+                label="X",
+                value=["before\x00after"],
+            ),
+            id="array-value",
+        ),
+        pytest.param(
+            jmd.Envelope(
+                mode="data",
+                label="X",
+                value={"before\x00after": "value"},
+            ),
+            id="object-key",
+        ),
+    ),
+)
+def test_q6_generator_preserves_embedded_nul(
+    parser_surface: ParserSurface,
+    serializer_surface: SerializerSurface,
+    envelope: jmd.Envelope,
+) -> None:
+    """Preserve embedded NUL code points across every backend pairing."""
+    serialized = serializer_surface.serialize(envelope)
+    assert parser_surface.parse(serialized) == envelope
