@@ -149,12 +149,18 @@ def _collect_must_fail(
     return pairs
 
 
+def _read_jmd_fixture(path: pathlib.Path) -> str:
+    """Read fixture bytes as text without universal-newline translation."""
+    with path.open(encoding="utf-8", newline="") as fixture:
+        return fixture.read()
+
+
 def _load_value_oracle(
     jmd_path: pathlib.Path,
     json_path: pathlib.Path,
 ) -> tuple[str, object]:
     """Load fixture text and its independent JSON body oracle."""
-    jmd_text = jmd_path.read_text(encoding="utf-8")
+    jmd_text = _read_jmd_fixture(jmd_path)
     expected = json.loads(json_path.read_text(encoding="utf-8"))
     return jmd_text, expected
 
@@ -307,7 +313,7 @@ def test_must_fail(
 ) -> None:
     """Reject invalid input with the expected error kind and source line."""
     expected = json.loads(err_path.read_text(encoding="utf-8"))
-    jmd_text = jmd_path.read_text(encoding="utf-8")
+    jmd_text = _read_jmd_fixture(jmd_path)
     with pytest.raises(JMDParseError) as exc:
         parser_surface.parse(jmd_text)
     assert exc.value.kind == expected["kind"]
