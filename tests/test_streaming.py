@@ -9,6 +9,7 @@ import pytest
 
 import jmd
 from jmd import StreamEvent, jmd_stream
+from jmd._parser import JMDParseError
 from jmd._streaming import (
     JMDStreamParser,
     to_lines,
@@ -99,9 +100,6 @@ class TestArrayStreaming:
         ("opener", "content_indent", "expected"),
         [
             pytest.param(
-                "", "  > alpha\n  > beta", "alpha\nbeta", id="quote"
-            ),
-            pytest.param(
                 " |", "    alpha\n    beta", "alpha\nbeta", id="literal"
             ),
             pytest.param(
@@ -128,6 +126,30 @@ class TestArrayStreaming:
         assert ("note", expected) in fields
         assert ("tail", "after") in fields
         assert ("tail", "later") in fields
+
+    def test_blockquote_item_streams_content_and_later_fields(self) -> None:
+        """Stream canonical multiline content without losing later data."""
+        source = (
+            "# Records[]\n"
+            "- id: 1\n"
+            "  note:\n"
+            "  > alpha\n"
+            "  > beta\n"
+            "  tail: after\n"
+            "- id: 2\n"
+            "  tail: later\n"
+        )
+        streamed = events(source)
+        selected = [
+            (event.type, event.key, event.value)
+            for event in streamed
+            if event.type in {"FIELD", "FIELD_START", "FIELD_CONTENT"}
+        ]
+        assert ("FIELD_START", "note", None) in selected
+        assert ("FIELD_CONTENT", None, "alpha") in selected
+        assert ("FIELD_CONTENT", None, "beta") in selected
+        assert ("FIELD", "tail", "after") in selected
+        assert ("FIELD", "tail", "later") in selected
 
 
 class TestStreamingPartialDocs:
@@ -229,10 +251,152 @@ class TestJMDStreamParser:
         parser.process_line("# Doc")
 
         start_events = parser.process_line("note:")
-        assert [event.type for event in start_events] == ["FIELD_START"]
+        assert [
+            (event.type, event.key, event.value) for event in start_events
+        ] == [("FIELD_START", "note", None)]
 
         content_events = parser.process_line("> hello")
-        assert [event.type for event in content_events] == ["FIELD_CONTENT"]
+        assert [
+            (event.type, event.key, event.value) for event in content_events
+        ] == [("FIELD_CONTENT", None, "hello")]
+
+    def test_process_line_emits_structural_events(self) -> None:
+        """Close and open scopes as soon as a structural line completes."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+
+        assert [
+            event.type for event in parser.process_line("## child")
+        ] == ["OBJECT_START"]
+        assert [event.type for event in parser.process_line("x: 1")] == [
+            "FIELD"
+        ]
+        assert [
+            event.type for event in parser.process_line("## tags[]")
+        ] == ["OBJECT_END", "ARRAY_START"]
+        assert [event.type for event in parser.process_line("- value")] == [
+            "ITEM_VALUE"
+        ]
+        assert [event.type for event in parser.finish()] == [
+            "ARRAY_END",
+            "DOCUMENT_END",
+        ]
+
+    def test_blank_line_uses_one_line_scope_reset_lookahead(self) -> None:
+        """Resolve a pending blank from the next completed source line."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+        parser.process_line("## child")
+        parser.process_line("x: 1")
+
+        assert parser.process_line("") == []
+        resumed = parser.process_line("total: 2")
+        assert [event.type for event in resumed] == [
+            "SCOPE_RESET",
+            "OBJECT_END",
+            "FIELD",
+        ]
+
+    def test_blank_line_before_array_item_is_cosmetic(self) -> None:
+        """Keep an array open when a blank line precedes its next item."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+        parser.process_line("## tags[]")
+        parser.process_line("- first")
+
+        assert parser.process_line("") == []
+        assert [event.type for event in parser.process_line("- second")] == [
+            "ITEM_VALUE"
+        ]
+
+    @pytest.mark.parametrize(
+        ("opener", "expected"),
+        (("|", "alpha\nbeta"), (">", "alpha beta")),
+    )
+    def test_block_scalar_emits_aggregate_field_on_close(
+        self,
+        opener: str,
+        expected: str,
+    ) -> None:
+        """Buffer only a tolerated block scalar and emit it on closure."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+
+        assert [
+            event.type for event in parser.process_line(f"note: {opener}")
+        ] == ["FIELD_START"]
+        assert parser.process_line("  alpha") == []
+        assert parser.process_line("  beta") == []
+
+        resumed = parser.process_line("tail: after")
+        assert [
+            (event.type, event.key, event.value) for event in resumed
+        ] == [
+            ("FIELD", "note", expected),
+            ("FIELD", "tail", "after"),
+        ]
+
+    def test_frontmatter_is_retained_only_until_document_start(self) -> None:
+        """Emit complete frontmatter with the root and not as body events."""
+        parser = JMDStreamParser()
+        assert parser.process_line("confidence: high") == []
+        assert parser.process_line("") == []
+
+        root = parser.process_line("# Order")
+        assert len(root) == 1
+        assert root[0].type == "DOCUMENT_START"
+        assert root[0].frontmatter == {"confidence": "high"}
+
+    def test_parser_does_not_retain_completed_source_lines(self) -> None:
+        """Do not keep a whole-document source buffer after line processing."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+        for index in range(100):
+            parser.process_line(f"k{index}: {index}")
+        assert not hasattr(parser, "_lines")
+
+    @pytest.mark.parametrize(
+        ("line", "kind"),
+        (
+            ("# Other", "second_root_heading"),
+            ("#- Other", "mode_marker_mid_document"),
+        ),
+    )
+    def test_rejects_second_document_markers_incrementally(
+        self,
+        line: str,
+        kind: str,
+    ) -> None:
+        """Reject a second document on the line where it arrives."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+        with pytest.raises(JMDParseError) as exc:
+            parser.process_line(line)
+        assert exc.value.kind == kind
+        assert exc.value.line == 2
+
+    def test_finish_without_root_fails(self) -> None:
+        """Match the batch parser when EOF arrives before a root heading."""
+        parser = JMDStreamParser()
+        parser.process_line("confidence: high")
+        with pytest.raises(ValueError, match="No root heading"):
+            parser.finish()
+
+    def test_leading_bom_is_consumed_incrementally(self) -> None:
+        """Consume one tolerated BOM before tokenizing the first line."""
+        parser = JMDStreamParser()
+        assert [
+            event.type for event in parser.process_line("\ufeff# Doc")
+        ] == ["DOCUMENT_START"]
+
+    def test_lone_carriage_return_is_rejected_incrementally(self) -> None:
+        r"""Reject a lone \r that is not the CR half of a line ending."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+        with pytest.raises(JMDParseError) as exc:
+            parser.process_line("value: a\rb")
+        assert exc.value.kind == "lone_carriage_return"
+        assert exc.value.line == 2
 
     def test_finish_idempotent(self) -> None:
         """Test that a second finish() call returns []."""
@@ -254,6 +418,33 @@ class TestJMDStreamParser:
 
 class TestAsyncStreamingAPI:
     """B.3: async events() + to_lines() match jmd-js's async pair."""
+
+    def test_to_lines_decodes_utf8_across_chunk_boundaries(self) -> None:
+        """Preserve a UTF-8 code point split across byte chunks."""
+        async def chunks() -> AsyncIterator[bytes]:
+            yield b"# D\xc3"
+            yield b"\xb6c\nname: JMD\n"
+
+        async def go() -> list[str]:
+            return [line async for line in to_lines(chunks())]
+
+        assert asyncio.run(go()) == ["# Döc", "name: JMD"]
+
+    def test_async_events_are_visible_before_next_input_line(self) -> None:
+        """Yield each event before requesting the following source line."""
+        observed: list[str] = []
+
+        async def lines() -> AsyncIterator[str]:
+            yield "# Doc"
+            assert observed == ["DOCUMENT_START"]
+            yield "id: 7"
+
+        async def go() -> None:
+            async for event in async_stream_events(lines()):
+                observed.append(event.type)
+
+        asyncio.run(go())
+        assert observed == ["DOCUMENT_START", "FIELD", "DOCUMENT_END"]
 
     def test_to_lines_splits_chunks(self) -> None:
         """Test that to_lines splits an async iterable of arbitrary chunks."""
