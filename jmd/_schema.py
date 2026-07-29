@@ -3,14 +3,16 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from typing import Any, cast
+from typing import Any
 
 from ._parser_common import _is_indent_field, _is_object_item_content
-from ._scalars import parse_key, parse_scalar, quote_key, split_kv
+from ._scalars import parse_key, parse_scalar, split_kv
+from ._schema_conversion import (
+    json_schema_to_jmd_schema as json_schema_to_jmd_schema,
+)
 from ._tokenizer import Line, tokenize
 
 
@@ -434,92 +436,4 @@ class JMDSchemaParser:
         return fields
 
 
-# ---------------------------------------------------------------------------
-# JSON Schema <-> JMD Schema conversion
-# ---------------------------------------------------------------------------
 
-def _jmd_type_expr(
-    prop: dict[str, Any], key: str, required_keys: set[str]
-) -> str:
-    base = prop.get("type", "string")
-    optional = "?" if key not in required_keys else ""
-    enum_values = prop.get("enum", [])
-    if enum_values:
-        enum_str = "|".join(str(v) for v in enum_values)
-        return f"{base}({enum_str}){optional}"
-    return f"{base}{optional}"
-
-
-def _json_schema_props_to_jmd(
-    properties: dict[str, Any],
-    required: set[str],
-    lines: list[str],
-    depth: int,
-    indent: bool = False,
-) -> None:
-    """Convert JSON Schema properties to JMD schema lines.
-
-    Args:
-        properties: Mapping of property names to JSON Schema property dicts.
-        required: Set of property names that are required (non-optional).
-        lines: Output list to which JMD schema lines are appended.
-        depth: Current heading depth (1 = top-level, 2 = nested, …).
-        indent: If True, write fields as indented continuation lines
-            (used for array item templates).
-    """
-    heading = "#" * (depth + 1) + " " if not indent else ""
-    prefix = "  " if indent else ""
-
-    for key, prop_raw in properties.items():
-        prop: dict[str, Any] = cast(dict[str, Any], prop_raw)
-        q_key = quote_key(key)
-        ptype: str = prop.get("type", "string")
-        optional_mark = "" if key in required else "?"
-
-        if ptype == "object":
-            sub_props = cast(dict[str, Any], prop.get("properties", {}))
-            sub_req = set(cast(list[str], prop.get("required", [])))
-            lines.append(f"{heading}{q_key}")
-            _json_schema_props_to_jmd(sub_props, sub_req, lines, depth + 1)
-        elif ptype == "array":
-            items: dict[str, Any] = cast(dict[str, Any], prop.get("items", {}))
-            item_type: str = items.get("type", "string")
-            if item_type == "object":
-                sub_props = cast(dict[str, Any], items.get("properties", {}))
-                sub_req = set(cast(list[str], items.get("required", [])))
-                lines.append(
-                    f"{heading}{q_key}[]: object{optional_mark}"
-                )
-                if sub_props:
-                    # Write item template with indentation continuation
-                    first = True
-                    for ikey, iprop_raw in sub_props.items():
-                        iprop: dict[str, Any] = cast(dict[str, Any], iprop_raw)
-                        iq_key = quote_key(ikey)
-                        itype_expr = _jmd_type_expr(iprop, ikey, sub_req)
-                        if first:
-                            lines.append(f"- {iq_key}: {itype_expr}")
-                            first = False
-                        else:
-                            lines.append(f"  {iq_key}: {itype_expr}")
-            else:
-                lines.append(
-                    f"{heading}{q_key}[]: {item_type}{optional_mark}"
-                )
-        else:
-            type_expr = _jmd_type_expr(prop, key, required)
-            lines.append(f"{prefix}{heading}{q_key}: {type_expr}")
-
-
-def json_schema_to_jmd_schema(json_schema_source: str) -> str:
-    """Convert a JSON Schema string to a JMD Schema document."""
-    js: dict[str, Any] = json.loads(json_schema_source)
-    label: str = js.get("title", "Document")
-    lines: list[str] = [f"#! {label}"]
-    _json_schema_props_to_jmd(
-        properties=cast(dict[str, Any], js.get("properties", {})),
-        required=set(cast(list[str], js.get("required", []))),
-        lines=lines,
-        depth=1,
-    )
-    return "\n".join(lines)
