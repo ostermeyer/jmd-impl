@@ -117,10 +117,16 @@ tokenize(
             line_len = source_len - pos;
         }
 
-        /* Handle \r\n */
+        /* A trailing CR belongs to CRLF; any other CR is forbidden by
+         * §11.2. Detect it in the same pass that forms line views so the
+         * C fast path does not need a second whole-document scan. */
         Py_ssize_t raw_len = line_len;
         if (raw_len > 0 && line_start[raw_len - 1] == '\r')
             raw_len--;
+        if (memchr(line_start, '\r', (size_t)raw_len) != NULL) {
+            raise_structural_parse_error("lone_carriage_return", lineno);
+            return 0;
+        }
 
         /* Strip leading and trailing whitespace for 'text' */
         const char *text = line_start;
@@ -146,7 +152,12 @@ tokenize(
         } else {
             const char *hcontent;
             Py_ssize_t hcontent_len;
-            int hd = detect_heading(text, text_len, &hcontent, &hcontent_len);
+            int hd = 0;
+            /* §11.2: leading whitespace is significant indentation. An
+             * indented '#' is body prose, never a structural heading. */
+            if (text == line_start)
+                hd = detect_heading(
+                    text, text_len, &hcontent, &hcontent_len);
             if (hd > 0) {
                 ln.heading_depth = hd;
                 ln.content = hcontent;

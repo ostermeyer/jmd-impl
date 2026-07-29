@@ -24,6 +24,17 @@ class ParsedHeader:
     body_line: int
 
 
+@dataclass(frozen=True)
+class ScannedHeader:
+    """Frontmatter plus the untouched body slice for the C fast path."""
+
+    mode: Mode
+    label: str
+    frontmatter: dict[str, Any]
+    body: str
+    body_line: int
+
+
 def normalize_document_source(source: str) -> str:
     """Validate line endings and consume one tolerated leading BOM."""
     for position, character in enumerate(source):
@@ -37,6 +48,83 @@ def normalize_document_source(source: str) -> str:
             key="",
         )
     return source.removeprefix("\ufeff")
+
+
+def scan_document_header(source: str) -> ScannedHeader:
+    """Scan only the envelope prefix for the C parser fast path.
+
+    The returned body starts byte-for-byte at the first line whose first
+    non-whitespace character is ``#``. The C parser owns body tokenization and
+    structural validation; Python parses only the lenient frontmatter prefix
+    and extracts the root mode and label needed by :class:`Envelope`.
+
+    Args:
+        source: Complete JMD document text.
+
+    Returns:
+        Parsed frontmatter and an untouched body slice with its source line.
+
+    Raises:
+        JMDParseError: If the prefix contains a lone carriage return or no
+            candidate root heading exists.
+        ValueError: If the document is empty or the candidate root does not
+            use a depth-one heading form.
+    """
+    source = source.removeprefix("\ufeff")
+    if not source:
+        raise ValueError("Empty document")
+
+    body_offset, body_line = _find_root_boundary(source)
+    frontmatter_text = source[:body_offset]
+    frontmatter, _ = _parse_frontmatter(tokenize(frontmatter_text))
+    body = source[body_offset:]
+
+    root_line = body.split("\n", 1)[0].removesuffix("\r")
+    root_tokens = tokenize(root_line)
+    if not root_tokens or root_tokens[0].heading_depth != 1:
+        raise ValueError(
+            f"Line {body_line}: expected '# <label>' or '# []'"
+        )
+    mode, label = split_mode_label(root_tokens[0].content)
+    return ScannedHeader(
+        mode=mode,
+        label=label,
+        frontmatter=frontmatter,
+        body=body,
+        body_line=body_line,
+    )
+
+
+def _find_root_boundary(source: str) -> tuple[int, int]:
+    """Return the candidate root offset and line while validating the prefix."""
+    line_start = 0
+    line_number = 1
+    while True:
+        newline = source.find("\n", line_start)
+        line_end = len(source) if newline < 0 else newline
+        raw_line = source[line_start:line_end]
+        if raw_line.endswith("\r"):
+            candidate = raw_line[:-1]
+        else:
+            carriage_return = raw_line.find("\r")
+            if carriage_return >= 0:
+                raise JMDParseError(
+                    kind="lone_carriage_return",
+                    line=line_number,
+                    key="",
+                )
+            candidate = raw_line
+
+        if candidate.lstrip(" \t").startswith("#"):
+            return line_start, line_number
+        if newline < 0:
+            raise JMDParseError(
+                kind="no_root_heading",
+                line=1,
+                key="",
+            )
+        line_start = newline + 1
+        line_number += 1
 
 
 def parse_document_header(source: str) -> ParsedHeader:

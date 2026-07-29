@@ -65,12 +65,17 @@ jmd_parse(PyObject *self, PyObject *args)
     }
 
     if (st.pos >= lines.len) {
+        raise_structural_parse_error("no_root_heading", line_offset + 1);
         linearray_free(&lines);
-        PyErr_SetString(PyExc_ValueError, "No root heading found");
         return NULL;
     }
 
     JMDLine *first = &lines.items[st.pos];
+    if (first->heading_depth == 1 && first->content_len == 0) {
+        raise_structural_parse_error("no_root_heading", first->number);
+        linearray_free(&lines);
+        return NULL;
+    }
 
     PyObject *result;
 
@@ -93,6 +98,43 @@ jmd_parse(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_ValueError,
                         "Expected '# <label>' or '# []'");
         return NULL;
+    }
+
+    /* §18.0 and §3.6.2: a completed body may leave only decoration.
+     * A labelled depth-one heading starts a forbidden second document;
+     * a mode marker is the more specific error, and indented leftovers are
+     * prose rather than data. */
+    if (result != NULL) {
+        Py_ssize_t pos = st.pos;
+        while (pos < lines.len && lines.items[pos].heading_depth == -1)
+            pos++;
+        if (pos < lines.len) {
+            JMDLine *leftover = &lines.items[pos];
+            const char *error_kind = NULL;
+            if (leftover->heading_depth == 1
+                && leftover->content_len > 0)
+            {
+                const char *raw = leftover->raw;
+                Py_ssize_t raw_len = leftover->raw_len;
+                if (raw_len >= 3 && raw[0] == '#'
+                    && (raw[1] == '?' || raw[1] == '!' || raw[1] == '-')
+                    && (raw[2] == ' ' || raw[2] == '\t'))
+                    error_kind = "mode_marker_mid_document";
+                else
+                    error_kind = "second_root_heading";
+            }
+            else if (leftover->raw_len > 0
+                     && (leftover->raw[0] == ' '
+                         || leftover->raw[0] == '\t'))
+                error_kind = "prose_in_body";
+
+            if (error_kind != NULL) {
+                raise_structural_parse_error(
+                    error_kind, leftover->number);
+                Py_DECREF(result);
+                result = NULL;
+            }
+        }
     }
 
     linearray_free(&lines);
