@@ -1138,8 +1138,18 @@ parse_object_body(ParserState *st, int depth)
             continue;
         }
 
-        /* Unrecognized line: break */
-        break;
+        /* A nested object may end where its containing array resumes. */
+        if (depth > 1
+            && ((content_len == 1 && content[0] == '-')
+                || (content_len > 1 && content[0] == '-'
+                    && content[1] == ' ')
+                || is_thematic_break(line)))
+            break;
+
+        raise_structural_parse_error("prose_in_body", line->number);
+        Py_DECREF(kinds);
+        Py_DECREF(obj);
+        return NULL;
     }
 
     st->pos = pos;

@@ -221,7 +221,17 @@ class JMDBodyParser:
                 )
                 continue
 
-            break
+            if depth > 1 and (
+                content == "-"
+                or content.startswith("- ")
+                or is_thematic_break(line)
+            ):
+                break
+            raise JMDParseError(
+                kind="prose_in_body",
+                line=line_no,
+                key="",
+            )
 
         self._pos = pos
         return obj
