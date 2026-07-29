@@ -1,44 +1,99 @@
 # Changelog
 
-## 0.7.0 — 2026-07-29
+All notable changes to `jmd-format` are documented here. The project
+follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
+releases may carry behavioral (breaking) changes.
 
-This release qualifies the Python reference implementation against JMD v0.3.5.
+## [0.8.0] — 2026-07-29
 
-### Changed
+Full cross-backend qualification against **JMD Specification v0.3.5**,
+including the current errata at `ef07178a4f16`. The C accelerator and the
+pure-Python implementation now satisfy the same expanded conformance,
+robustness, serializer, and streaming evidence.
 
-- `JMDStreamParser.process_line()` now emits every event made complete by the
-  current source line instead of buffering the complete document until
-  `finish()`.
-- Direct push consumers must consume the list returned by every
-  `process_line()` call. `finish()` emits only pending scope and document-end
-  events and remains idempotent.
+### Changed (breaking)
+
+- `JMDStreamParser.process_line()` now returns every event completed by the
+  current source line instead of buffering the document until `finish()`.
+  Direct push consumers must consume each returned list; `finish()` emits
+  only pending scope and document-end events and remains idempotent.
 - Canonical blockquote fields emit `FIELD_START` followed by one
-  `FIELD_CONTENT` event per source line.
-- Tolerated `key: |` and `key: >` blocks emit `FIELD_START`, retain only the
-  current multiline value, and emit one aggregate `FIELD` on closure or EOF.
+  `FIELD_CONTENT` event per source line. Tolerated `key: |` and `key: >`
+  blocks emit `FIELD_START` and one aggregate `FIELD` on closure or EOF.
 - The synchronous and asynchronous adapters now share the incremental state
   machine. UTF-8 byte chunks may split a code point without data loss.
 
 ### Fixed
 
-- Python and C parsers consume one leading BOM, reject lone carriage returns,
-  and enforce the single-root and document-mode boundaries from JMD v0.3.5.
-- Multiline fields in array records preserve their content and every field or
-  item that follows them.
-- Thematic breaks inside array records remain decoration, and scalar array
-  strings containing colon-space serialize without changing their type.
+- Multiline fields in array records preserve their complete content and every
+  field or item that follows them across both parser backends.
+- Malformed anonymous sub-arrays raise `invalid_structure` instead of making
+  either batch parser loop without progress.
+- Serializers quote strings whose boundary whitespace, carriage returns, or
+  array-item colon-space would otherwise change during parsing.
 - The C serializer preserves embedded NUL characters in object values, array
   values, and keys.
-- Streaming no longer retains the complete source document. Scope transitions
-  and blank-line resets are emitted as soon as they become structurally
-  determined.
+- Batch and incremental parsers reject an in-band second root, including an
+  apparent `# Error` document after partial data, rather than treating it as
+  transport-level failure signalling.
 
-### Qualification and internals
+### Performance and internals
 
-- The vendored conformance corpus is aligned with JMD v0.3.5 and supplemented
-  by a spec-derived suite covering all applicable parser and serializer axes.
-- Python parser responsibilities and both C accelerators are split into
-  bounded modules or translation units with explicit ownership.
-- Streaming event vocabulary, parser state machine, bounded multiline/scope
-  state, and public adapters have separate module ownership.
-- Repository-wide Ruff, strict Mypy, and all 765 tests pass.
+- The one-pass C fast path is retained in the modular parser: Python scans
+  only the lenient frontmatter prefix and C tokenizes the untouched body once
+  while preserving document-absolute diagnostics.
+- Python parser responsibilities, both C accelerators, streaming events,
+  parser state, and JSON Schema conversion have bounded module owners with
+  explicit ownership and compatibility re-exports where required.
+- The vendored conformance corpus is pinned to the qualified specification
+  commit and supplemented by whole-spec parser and serializer axes.
+
+## [0.7.0] — 2026-07-07
+
+Conformance completeness for **JMD Specification v0.3.5** and a rewritten,
+much faster C parse path. Both the C accelerator and the pure-Python
+fallback are validated against the canonical `jmd-spec` conformance suite,
+with identical error kinds and line numbers across backends.
+
+### Changed (breaking)
+
+Parsing is now strict where it previously laundered malformed input into
+valid structure with silent data loss. Documents that used to parse may
+now be rejected with a structured `JMDParseError`:
+
+- **Prose in the body** — an indented line that is not a continuation
+  field, a bullet, a blockquote, a heading, or a thematic break →
+  `prose_in_body` (§3.6.2, §11.2). Leading whitespace is a significant
+  INDENT, valid only for array-item continuation.
+- **A second root heading**, or a **mid-document mode marker**
+  (`#?` / `#!` / `#-`) → `second_root_heading` /
+  `mode_marker_mid_document` (§18.0).
+- **A lone carriage return** (a `\r` not part of a `\r\n`) →
+  `lone_carriage_return` (§11.2).
+- **An indented or otherwise missing column-0 root heading** →
+  `no_root_heading` (§3.1, §11.2).
+- **`---` inside an array body** is now decoration (§8.6): an indented
+  continuation field after it stays with the open item instead of being
+  dropped.
+- The serializer now **quotes scalar array items** that would otherwise
+  reparse as an object item / structural marker, or that carry
+  significant edge whitespace (§6.1/§6.2) — fixing a round-trip break.
+
+### Added
+
+- **BOM tolerance** — a leading U+FEFF is consumed and ignored (§11.2).
+- Structured errors carry a machine-readable `.kind` and a
+  document-absolute `.line`, reported identically by both backends.
+
+### Performance
+
+- The C fast path is substantially faster: header extraction now consumes
+  only the frontmatter prefix and hands the raw body to a self-sufficient
+  C parser in a single pass, instead of tokenizing the whole document in
+  Python beforehand.
+
+### Internal
+
+- Line-ending handling in the conformance harness is byte-exact and
+  portable across all supported Python versions (3.10+); CRLF-tolerance
+  fixtures are read raw so they exercise the real code path.
