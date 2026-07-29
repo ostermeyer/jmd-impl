@@ -240,7 +240,14 @@ class JMDBodyParser:
         line_no = line.number
 
         if content == "-" or content == "[]":
-            return
+            raise JMDParseError(
+                kind="invalid_structure",
+                line=line_no,
+                key="",
+                message=(
+                    f"Line {line_no}: array item marker has no parent array"
+                ),
+            )
 
         self._advance()
 

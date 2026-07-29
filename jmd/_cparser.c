@@ -1162,13 +1162,10 @@ parse_heading_into(ParserState *st, PyObject *obj, PyObject *kinds, int depth)
     Py_ssize_t content_len = line->content_len;
     int line_no = line->number;
 
-    /* Depth-qualified array item: ## - */
-    if (content_len == 1 && content[0] == '-')
-        return 0;
-
-    /* Anonymous sub-array: ## [] */
-    if (content_len == 2 && content[0] == '[' && content[1] == ']')
-        return 0;
+    /* Array item markers are valid only when consumed by a parent array. */
+    if ((content_len == 1 && content[0] == '-')
+        || (content_len == 2 && content[0] == '[' && content[1] == ']'))
+        return raise_structural_parse_error("invalid_structure", line_no);
 
     st->pos++;
 
