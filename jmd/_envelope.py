@@ -29,9 +29,9 @@ class Envelope:
         mode: One of ``"data"``, ``"schema"``, ``"query"``, ``"delete"``
             — derived from the root marker per §3.6.1.
         label: Root heading label, with mode-mark and any trailing
-            ``[]`` sigil stripped. The empty string is a valid label
-            for anonymous root headings (``#``, ``# []``, ``#- []``).
-        value: Parsed document body. A ``dict`` for object roots, a
+            ``[]`` sigil stripped. The empty string is valid only for a
+            sigil-only root array such as ``# []`` or ``#- []``; object roots
+            require a non-empty label.
             ``list`` for array roots. Never ``None`` for a validly
             parsed document.
         frontmatter: Map of frontmatter fields preserved verbatim from

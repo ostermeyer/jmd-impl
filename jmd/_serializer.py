@@ -9,21 +9,20 @@ from typing import Any, cast
 from ._scalars import quote_key, serialize_scalar
 
 
-def validate_label(label: str) -> str:
+def validate_label(label: str, *, root_is_array: bool) -> str:
     r"""Validate and normalize a root-heading label (D11).
-
-    Strips leading and trailing whitespace. Rejects labels containing
-    newline or carriage-return characters, which would split the root
-    heading into multiple lines and corrupt the document structure.
 
     Args:
         label: The raw label string, possibly mode-prefixed.
+        root_is_array: Whether the serialized root value is an array.
 
     Returns:
         The label with leading/trailing whitespace removed.
 
     Raises:
-        ValueError: If the label contains ``\\n`` or ``\\r``.
+        ValueError: If the label contains ``\\n`` or ``\\r``, an object root
+            has no label or an array sigil, or an array label already carries
+            a non-empty ``[]`` sigil.
     """
     if "\n" in label or "\r" in label:
         raise ValueError(
@@ -34,8 +33,18 @@ def validate_label(label: str) -> str:
     # Preserve a leading mode prefix (``- ``, ``? ``, ``! ``) together
     # with its trailing space — stripping it would erase the mode marker.
     if len(label) >= 2 and label[0] in "-?!" and label[1] == " ":
-        return label[:2] + label[2:].rstrip()
-    return label.rstrip()
+        label = label[:2] + label[2:].rstrip()
+    else:
+        label = label.rstrip()
+
+    _, rest = _split_label(label)
+    if not root_is_array and (not rest or rest.endswith("[]")):
+        raise ValueError(
+            "JMD object roots require a non-empty label without an [] sigil"
+        )
+    if root_is_array and rest not in ("", "[]") and rest.endswith("[]"):
+        raise ValueError("JMD array labels must omit the [] sigil")
+    return label
 
 
 def _split_label(label: str) -> tuple[str, str]:
@@ -93,7 +102,7 @@ class JMDSerializer:
                 characters (D11). Leading/trailing whitespace is stripped
                 silently.
         """
-        label = validate_label(label)
+        label = validate_label(label, root_is_array=isinstance(data, list))
         mark, rest = _split_label(label)
         prefix = f"#{mark} "
         lines: list[str] = []

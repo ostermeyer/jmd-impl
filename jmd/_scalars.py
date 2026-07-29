@@ -150,6 +150,8 @@ def _needs_quote(s: str) -> bool:
         # field start (`key:`); emit `""` to preserve the empty-string
         # value through round-trip.  The C accelerator already does this.
         return True
+    if s[:1].isspace() or s[-1:].isspace() or "\r" in s:
+        return True
     if s == "-":
         return True
     if s in ("null", "true", "false"):

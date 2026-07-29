@@ -207,7 +207,7 @@ def _serialize_internal(
     """Shared body for :func:`serialize` (both envelope and convenience)."""
     # D11: validate/normalize label at the public entry point so both
     # the C-accelerated and pure-Python paths behave consistently.
-    label = validate_label(label)
+    label = validate_label(label, root_is_array=isinstance(data, list))
     if _HAS_CSERIALIZER:
         body = str(_c_serialize(data, label))
     else:

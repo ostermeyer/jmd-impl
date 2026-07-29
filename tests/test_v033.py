@@ -267,10 +267,10 @@ class TestSerializerLabelValidation:
         out = jmd.serialize({"x": 1}, label="  Order  ")
         assert out == "# Order\nx: 1"
 
-    def test_empty_label_allowed(self) -> None:
-        """Test that an empty label produces an anonymous root heading."""
-        out = jmd.serialize({"x": 1}, label="")
-        assert out.startswith("# \n") or out.startswith("#\n")
+    def test_empty_object_label_rejected(self) -> None:
+        """Reject an object root without the required label."""
+        with pytest.raises(ValueError, match="non-empty label"):
+            jmd.serialize({"x": 1}, label="")
 
     def test_mode_prefix_preserved_through_whitespace(self) -> None:
         """Test that mode prefix survives surrounding whitespace strip."""

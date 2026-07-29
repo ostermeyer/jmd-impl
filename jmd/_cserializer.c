@@ -100,6 +100,9 @@ static int
 ser_needs_quote(const char *s, Py_ssize_t len)
 {
     if (len == 0) return 1;
+    /* Bare-value normalization strips significant boundary whitespace. */
+    if (s[0] == ' ' || s[len - 1] == ' ')
+        return 1;
     /* Structural literals */
     if (len == 4 && (memcmp(s, "null", 4) == 0 || memcmp(s, "true", 4) == 0))
         return 1;
@@ -114,8 +117,10 @@ ser_needs_quote(const char *s, Py_ssize_t len)
     /* Starts with '"' */
     if (s[0] == '"')
         return 1;
-    /* Contains newline or tab */
-    if (memchr(s, '\n', (size_t)len) || memchr(s, '\t', (size_t)len))
+    /* Contains newline, carriage return, or tab */
+    if (memchr(s, '\n', (size_t)len)
+        || memchr(s, '\r', (size_t)len)
+        || memchr(s, '\t', (size_t)len))
         return 1;
     /* Looks like a number? Try parsing as double. */
     {
