@@ -282,6 +282,31 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
     return ok;
 }
 
+/*
+ * Write a scalar in array-item position without the object-item colon trap.
+ *
+ * Inputs: ob is a borrowed output buffer; value is a borrowed Python object.
+ * Output: 1 on success, 0 with a Python exception on failure.  No reference
+ * is retained after return.
+ */
+static int
+ser_write_array_scalar(OutBuf *ob, PyObject *value)
+{
+    if (PyUnicode_Check(value)) {
+        const char *s = PyUnicode_AsUTF8(value);
+        if (!s)
+            return 0;
+
+        Py_ssize_t len = (Py_ssize_t)strlen(s);
+        for (Py_ssize_t i = 0; i + 1 < len; i++) {
+            if (s[i] == ':' && s[i + 1] == ' ')
+                return ser_write_quoted(ob, s, len);
+        }
+    }
+
+    return ser_write_scalar(ob, value);
+}
+
 /* ------------------------------------------------------------------ */
 /* Multiline strings -> blockquote                                     */
 /* ------------------------------------------------------------------ */
@@ -441,7 +466,7 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
         /* All scalars -> "- value" lines */
         for (Py_ssize_t i = 0; i < n; i++) {
             if (!outbuf_append(ob, "\n- ", 3)) return 0;
-            if (!ser_write_scalar(ob, PyList_GET_ITEM(list, i))) return 0;
+            if (!ser_write_array_scalar(ob, PyList_GET_ITEM(list, i))) return 0;
         }
         return 1;
     }
@@ -620,7 +645,7 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 if (!outbuf_heading(ob, depth)) return 0;
             }
             if (!outbuf_append(ob, "- ", 2)) return 0;
-            if (!ser_write_scalar(ob, item)) return 0;
+            if (!ser_write_array_scalar(ob, item)) return 0;
             needs_qualifier = 0;
         }
     }

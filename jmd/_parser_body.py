@@ -540,7 +540,8 @@ class JMDBodyParser:
                     break
 
                 if is_thematic_break(line):
-                    break
+                    pos += 1
+                    continue
                 break
 
         self._pos = pos
@@ -579,7 +580,9 @@ class JMDBodyParser:
                 break
 
             if is_thematic_break(line):
-                break
+                pos += 1
+                self._pos = pos
+                continue
 
             hd = line.heading_depth
             if hd == 0:

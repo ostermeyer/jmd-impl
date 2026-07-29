@@ -1729,9 +1729,11 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
                 break;
             }
 
-            /* Thematic break ends the current item */
-            if (is_thematic_break(line))
-                break;
+            /* Thematic breaks are inert decoration inside an array item. */
+            if (is_thematic_break(line)) {
+                pos++;
+                continue;
+            }
 
             /* After indented fields, also accept bare fields and headings */
             break;
@@ -1789,9 +1791,12 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
         if (line->heading_depth > child_depth)
             break;
 
-        /* Thematic break: stop */
-        if (is_thematic_break(line))
-            break;
+        /* Thematic breaks are inert decoration inside an array item. */
+        if (is_thematic_break(line)) {
+            pos++;
+            st->pos = pos;
+            continue;
+        }
 
         /* Non-heading (hd == 0) */
         if (line->heading_depth == 0) {

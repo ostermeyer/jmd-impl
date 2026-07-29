@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 from ._scalars import quote_key, serialize_scalar
@@ -57,6 +58,20 @@ def _split_label(label: str) -> tuple[str, str]:
     if len(label) >= 2 and label[0] in "-?!" and label[1] == " ":
         return label[0], label[2:]
     return "", label
+
+def _serialize_array_scalar(value: Any) -> str:
+    """Serialize a scalar unambiguously in array-item position.
+
+    Args:
+        value: Scalar value to serialize.
+
+    Returns:
+        Canonical scalar text. Strings containing ``": "`` are quoted so
+        the parser cannot mistake them for object items.
+    """
+    if isinstance(value, str) and ": " in value:
+        return json.dumps(value, ensure_ascii=False)
+    return serialize_scalar(value)
 
 
 class JMDSerializer:
@@ -195,7 +210,7 @@ class JMDSerializer:
                         lines.append("#" * depth)
         elif all_scalars:
             for item in lst:
-                lines.append(f"- {serialize_scalar(item)}")
+                lines.append(f"- {_serialize_array_scalar(item)}")
         else:
             # Heterogeneous array — items mixing scalars, dicts, sub-arrays.
             #
@@ -250,5 +265,5 @@ class JMDSerializer:
                     needs_qualifier = True
                 else:
                     pfx = qualifier if needs_qualifier else ""
-                    lines.append(f"{pfx}- {serialize_scalar(item)}")
+                    lines.append(f"{pfx}- {_serialize_array_scalar(item)}")
                     needs_qualifier = False
