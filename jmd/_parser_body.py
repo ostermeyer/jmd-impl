@@ -12,6 +12,7 @@ from typing import Any
 
 from ._parser_common import (
     _K_SCALAR_BARE,
+    JMDParseError,
     _kv_match,
     parse_block_scalar_from,
     parse_blockquote_from,
@@ -142,6 +143,12 @@ class JMDBodyParser:
 
             content = line.content
             line_no = line.number
+            if line.raw_text.startswith((" ", "\t")):
+                raise JMDParseError(
+                    kind="prose_in_body",
+                    line=line_no,
+                    key="",
+                )
 
             if ": " in content:
                 key_part, val_part = split_kv(content) or (content, "")

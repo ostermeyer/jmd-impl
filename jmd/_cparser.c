@@ -105,6 +105,17 @@ raise_jmd_parse_error(const char *kind, int line, PyObject *key,
     return -1;
 }
 
+/* Raise a structural JMDParseError with an empty, newly owned key. */
+static int
+raise_structural_parse_error(const char *kind, int line)
+{
+    PyObject *key = PyUnicode_FromStringAndSize("", 0);
+    if (!key) return -1;
+    int result = raise_jmd_parse_error(kind, line, key, NULL, NULL);
+    Py_DECREF(key);
+    return result;
+}
+
 /* §7.4.1 promote-to-array helper for an object-heading "## key".
    On first occurrence, sets obj[key] = value (a dict) and records
    K_OBJECT.  On second occurrence, promotes to [prev, value] and
@@ -1010,6 +1021,16 @@ parse_object_body(ParserState *st, int depth)
             }
             pos = st->pos;
             continue;
+        }
+
+        /* Indentation denotes array-item continuation only (§11.2). */
+        if (line->raw_len > 0
+            && (line->raw[0] == ' ' || line->raw[0] == '\t'))
+        {
+            raise_structural_parse_error("prose_in_body", line->number);
+            Py_DECREF(kinds);
+            Py_DECREF(obj);
+            return NULL;
         }
 
         /* Non-heading line (hd == 0) */

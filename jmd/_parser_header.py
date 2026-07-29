@@ -65,6 +65,8 @@ def parse_document_header(source: str) -> ParsedHeader:
         raise ValueError(
             f"Line {first.number}: expected '# <label>' or '# []'"
         )
+    _validate_root_heading(first)
+    _validate_single_document(lines, pos)
 
     mode, label = split_mode_label(first.content)
     return ParsedHeader(
@@ -75,6 +77,41 @@ def parse_document_header(source: str) -> ParsedHeader:
         root_pos=pos,
         body_line=first.number,
     )
+
+
+def _validate_root_heading(root: Line) -> None:
+    """Reject an indented or anonymous document root."""
+    if root.raw_text.startswith((" ", "\t")) or root.content == "":
+        raise JMDParseError(
+            kind="no_root_heading",
+            line=root.number,
+            key="",
+        )
+
+
+def _validate_single_document(lines: list[Line], root_pos: int) -> None:
+    """Reject a second root or mode marker after the document root."""
+    root_content = lines[root_pos].content
+    root_is_array = root_content == "[]" or root_content.endswith("[]")
+    for line in lines[root_pos + 1 :]:
+        if line.heading_depth != 1 or line.content == "":
+            continue
+        raw = line.raw_text.lstrip(" \t")
+        if raw.startswith(("#? ", "#! ", "#- ")):
+            raise JMDParseError(
+                kind="mode_marker_mid_document",
+                line=line.number,
+                key="",
+            )
+        if root_is_array and (
+            line.content == "-" or line.content.startswith("- ")
+        ):
+            continue
+        raise JMDParseError(
+            kind="second_root_heading",
+            line=line.number,
+            key="",
+        )
 
 
 def _parse_frontmatter(lines: list[Line]) -> tuple[dict[str, Any], int]:

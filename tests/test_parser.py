@@ -3,7 +3,10 @@
 
 from typing import Any
 
+import pytest
+
 from jmd import JMDParser
+from jmd._parser import JMDParseError
 
 
 def parse(source: str) -> Any:
@@ -246,9 +249,11 @@ class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
     def test_empty_label(self) -> None:
-        """Test that a heading with no label text is accepted."""
-        result = parse("# \nval: 1")
-        assert result == {"val": 1}
+        """Reject an anonymous document root with a structured error."""
+        with pytest.raises(JMDParseError) as exc:
+            parse("# \nval: 1")
+        assert exc.value.kind == "no_root_heading"
+        assert exc.value.line == 1
 
     def test_single_field(self) -> None:
         """Test that a document with a single field is parsed correctly."""
