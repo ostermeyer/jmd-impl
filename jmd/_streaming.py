@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ._envelope import Mode, split_mode_label
-from ._parser import (
+from ._parser_common import (
     _K_ARRAY_PROMOTED,
     _K_ARRAY_SIGIL,
     _K_OBJECT,

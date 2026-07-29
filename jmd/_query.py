@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
-from ._parser import _is_indent_field, _is_object_item_content
+from ._parser_common import _is_indent_field, _is_object_item_content
 from ._scalars import parse_key, parse_scalar
 from ._tokenizer import Line, tokenize
 

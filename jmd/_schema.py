@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, cast
 
-from ._parser import _is_indent_field, _is_object_item_content
+from ._parser_common import _is_indent_field, _is_object_item_content
 from ._scalars import parse_key, parse_scalar, quote_key, split_kv
 from ._tokenizer import Line, tokenize
 
