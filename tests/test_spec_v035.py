@@ -358,6 +358,19 @@ def test_v035_plain_prose_is_rejected(
     assert exc.value.line == 3
 
 
+@pytest.mark.parametrize("backend", ("c", "py", "direct-py"))
+def test_v035_in_band_error_after_partial_data_is_rejected(
+    backend: ParserBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cover corrected RT-068 through every batch parser surface."""
+    source = "# []\n- id: 1\n# Error\ncode: internal_error"
+    with pytest.raises(JMDParseError) as exc:
+        _parse(backend, source, monkeypatch)
+    assert exc.value.kind == "second_root_heading"
+    assert exc.value.line == 3
+
+
 _SERIALIZER_CASES = (
     pytest.param(
         jmd.Envelope(mode="data", label="Order", value={"id": 42}),

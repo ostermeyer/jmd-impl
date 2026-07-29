@@ -375,6 +375,18 @@ class TestJMDStreamParser:
         assert exc.value.kind == kind
         assert exc.value.line == 2
 
+    def test_rejects_in_band_error_after_partial_data(self) -> None:
+        """Reject corrected RT-068 after already emitting partial data."""
+        parser = JMDStreamParser()
+        parser.process_line("# []")
+        partial = parser.process_line("- id: 1")
+        assert [event.type for event in partial] == ["ITEM_START", "FIELD"]
+
+        with pytest.raises(JMDParseError) as exc:
+            parser.process_line("# Error")
+        assert exc.value.kind == "second_root_heading"
+        assert exc.value.line == 3
+
     def test_finish_without_root_fails(self) -> None:
         """Match the batch parser when EOF arrives before a root heading."""
         parser = JMDStreamParser()
