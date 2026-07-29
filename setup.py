@@ -17,6 +17,14 @@ _CPARSER_SOURCES = [
     "jmd/_cparser_array.c",
 ]
 _CPARSER_DEPENDS = ["jmd/_cparser_internal.h"]
+_CSERIALIZER_SOURCES = [
+    "jmd/_cserializer.c",
+    "jmd/_cserializer_buffer.c",
+    "jmd/_cserializer_scalar.c",
+    "jmd/_cserializer_object.c",
+    "jmd/_cserializer_array.c",
+]
+_CSERIALIZER_DEPENDS = ["jmd/_cserializer_internal.h"]
 
 
 class OptionalBuildExt(build_ext):
@@ -49,7 +57,11 @@ setup(
             sources=_CPARSER_SOURCES,
             depends=_CPARSER_DEPENDS,
         ),
-        Extension("jmd._cserializer", sources=["jmd/_cserializer.c"]),
+        Extension(
+            "jmd._cserializer",
+            sources=_CSERIALIZER_SOURCES,
+            depends=_CSERIALIZER_DEPENDS,
+        ),
     ],
     cmdclass={"build_ext": OptionalBuildExt},
 )
