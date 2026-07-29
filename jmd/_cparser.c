@@ -32,9 +32,8 @@
 #define KEY_CACHE_MASK (KEY_CACHE_SIZE - 1)
 
 typedef struct {
-    const char *raw;
     Py_ssize_t  len;
-    PyObject   *pyobj;        /* borrowed ref held alive by the cache */
+    PyObject   *pyobj;        /* owned reference; also owns UTF-8 storage */
 } KeyCacheEntry;
 
 static KeyCacheEntry key_cache[KEY_CACHE_SIZE];
@@ -229,15 +228,22 @@ intern_key(const char *raw, Py_ssize_t len)
 {
     unsigned int idx = key_hash(raw, len) & KEY_CACHE_MASK;
     KeyCacheEntry *e = &key_cache[idx];
-    if (e->pyobj && e->len == len && memcmp(e->raw, raw, (size_t)len) == 0) {
-        Py_INCREF(e->pyobj);
-        return e->pyobj;
+    if (e->pyobj && e->len == len) {
+        Py_ssize_t cached_len;
+        const char *cached_raw = PyUnicode_AsUTF8AndSize(
+            e->pyobj, &cached_len);
+        if (!cached_raw) return NULL;
+        if (cached_len == len
+            && memcmp(cached_raw, raw, (size_t)len) == 0)
+        {
+            Py_INCREF(e->pyobj);
+            return e->pyobj;
+        }
     }
     PyObject *obj = PyUnicode_FromStringAndSize(raw, len);
     if (!obj) return NULL;
-    /* Evict old entry */
+    /* Evict the old owned key; never retain source-buffer pointers. */
     Py_XDECREF(e->pyobj);
-    e->raw = raw;
     e->len = len;
     e->pyobj = obj;
     Py_INCREF(obj);   /* one ref for cache, one for caller */

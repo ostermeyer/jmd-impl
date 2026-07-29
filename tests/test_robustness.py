@@ -68,3 +68,13 @@ def test_malformed_same_depth_subarray_fails_without_hanging(
         f"{backend} parser returned {completed.returncode}: "
         f"stdout={completed.stdout!r}, stderr={completed.stderr!r}"
     )
+
+
+@pytest.mark.skipif(not jmd._HAS_CPARSER, reason="C parser unavailable")
+def test_c_key_cache_owns_cached_key_storage() -> None:
+    """Keep cached keys valid after each short-lived source is released."""
+    colliding_keys = ("aact", "aada")
+    for value in range(1_000):
+        for key in colliding_keys:
+            source = f"# X\n{key}: {value}"
+            assert jmd.parse(source).value == {key: value}
