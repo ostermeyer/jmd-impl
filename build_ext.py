@@ -14,6 +14,16 @@ from setuptools.command.build_ext import build_ext
 _GNU_COMPILE_ARGS = ["-O3", "-Wall", "-Wextra"]
 _MSVC_COMPILE_ARGS: list[str] = []
 
+_CPARSER_SOURCES = [
+    "jmd/_cparser.c",
+    "jmd/_cparser_runtime.c",
+    "jmd/_cparser_lex.c",
+    "jmd/_cparser_multiline.c",
+    "jmd/_cparser_object.c",
+    "jmd/_cparser_array.c",
+]
+_CPARSER_DEPENDS = ["jmd/_cparser_internal.h"]
+
 
 class JmdBuildExt(build_ext):
     """Apply compiler-appropriate flags before delegating to setuptools."""
@@ -30,7 +40,11 @@ class JmdBuildExt(build_ext):
 setup(
     name="jmd_cext",
     ext_modules=[
-        Extension("jmd._cparser", sources=["jmd/_cparser.c"]),
+        Extension(
+            "jmd._cparser",
+            sources=_CPARSER_SOURCES,
+            depends=_CPARSER_DEPENDS,
+        ),
         Extension("jmd._cserializer", sources=["jmd/_cserializer.c"]),
     ],
     cmdclass={"build_ext": JmdBuildExt},

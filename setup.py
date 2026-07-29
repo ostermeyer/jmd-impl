@@ -8,6 +8,16 @@ from setuptools.command.build_ext import build_ext
 _GNU_COMPILE_ARGS = ["-O3"]
 _MSVC_COMPILE_ARGS: list[str] = []
 
+_CPARSER_SOURCES = [
+    "jmd/_cparser.c",
+    "jmd/_cparser_runtime.c",
+    "jmd/_cparser_lex.c",
+    "jmd/_cparser_multiline.c",
+    "jmd/_cparser_object.c",
+    "jmd/_cparser_array.c",
+]
+_CPARSER_DEPENDS = ["jmd/_cparser_internal.h"]
+
 
 class OptionalBuildExt(build_ext):
     """Build C extensions, but silently skip if compilation fails.
@@ -34,7 +44,11 @@ class OptionalBuildExt(build_ext):
 
 setup(
     ext_modules=[
-        Extension("jmd._cparser", sources=["jmd/_cparser.c"]),
+        Extension(
+            "jmd._cparser",
+            sources=_CPARSER_SOURCES,
+            depends=_CPARSER_DEPENDS,
+        ),
         Extension("jmd._cserializer", sources=["jmd/_cserializer.c"]),
     ],
     cmdclass={"build_ext": OptionalBuildExt},

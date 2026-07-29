@@ -42,7 +42,7 @@ where = ["."]
 include = ["jmd*"]
 
 [tool.setuptools.package-data]
-jmd = ["py.typed", "*.c"]
+jmd = ["py.typed", "*.c", "*.h"]
 
 [tool.ruff]
 line-length = 80
