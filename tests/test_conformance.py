@@ -33,6 +33,7 @@ from jmd._parser import JMDParseError
 
 ParserName = Literal["c", "py", "direct-py"]
 SerializerName = Literal["c", "py"]
+DocumentMode = Literal["data", "schema", "query", "delete"]
 ParseCallable = Callable[[str], jmd.Envelope]
 SerializeCallable = Callable[[jmd.Envelope], str]
 
@@ -445,3 +446,48 @@ def test_q3_array_record_multiline_roundtrip(
     """Round-trip multiline array records across every backend pairing."""
     serialized = serializer_surface.serialize(_Q3_ROUNDTRIP_ENVELOPE)
     assert parser_surface.parse(serialized) == _Q3_ROUNDTRIP_ENVELOPE
+
+
+# ---------------------------------------------------------------------------
+# Q6 — strict generator requirements (spec §§6.1, 11.2, and 22.1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ("data", "schema", "query", "delete"))
+def test_q6_generator_rejects_unlabelled_object_root(
+    serializer_surface: SerializerSurface,
+    mode: DocumentMode,
+) -> None:
+    """Never emit an anonymous object root for any document mode."""
+    envelope = jmd.Envelope(mode=mode, label="", value={})
+    with pytest.raises(ValueError, match="non-empty label"):
+        serializer_surface.serialize(envelope)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
+        pytest.param(" leading", '# X\nv: " leading"', id="leading-space"),
+        pytest.param("trailing  ", '# X\nv: "trailing  "', id="trailing-space"),
+        pytest.param(
+            "line\rbreak",
+            '# X\nv: "line\\rbreak"',
+            id="carriage-return",
+        ),
+    ),
+)
+def test_q6_generator_quotes_significant_whitespace(
+    parser_surface: ParserSurface,
+    serializer_surface: SerializerSurface,
+    value: str,
+    expected: str,
+) -> None:
+    """Quote whitespace that bare-value normalization would destroy."""
+    envelope = jmd.Envelope(
+        mode="data",
+        label="X",
+        value={"v": value},
+    )
+    serialized = serializer_surface.serialize(envelope)
+    assert serialized == expected
+    assert parser_surface.parse(serialized) == envelope
