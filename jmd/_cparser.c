@@ -911,6 +911,28 @@ next_is_blockquote(ParserState *st)
 }
 
 /* ------------------------------------------------------------------ */
+/* Parse a scalar or multiline field value at the current cursor.      */
+/*                                                                      */
+/* Input value_text is borrowed from a tokenized line. The returned     */
+/* Python object is a new reference. Block parsers advance st->pos; a   */
+/* scalar or empty value leaves it unchanged.                            */
+/* ------------------------------------------------------------------ */
+
+static PyObject *
+parse_field_value(ParserState *st, const char *value_text,
+                  Py_ssize_t value_len)
+{
+    if (value_len == 0) {
+        if (next_is_blockquote(st))
+            return parse_blockquote(st);
+        return PyUnicode_FromStringAndSize("", 0);
+    }
+    if (value_len == 1 && (value_text[0] == '|' || value_text[0] == '>'))
+        return parse_block_scalar(st, value_text[0] == '>');
+    return parse_scalar(value_text, value_len);
+}
+
+/* ------------------------------------------------------------------ */
 /* Inline helper: find ": " using memchr (for non-kv contexts)         */
 /* ------------------------------------------------------------------ */
 
@@ -1230,19 +1252,40 @@ is_dash_item(const char *content, Py_ssize_t len)
     return 0;
 }
 
+/* Return the key/value separator for an item field. A trailing colon is
+ * the empty-value form that may introduce a canonical blockquote. */
+static Py_ssize_t
+find_item_field_split(const char *content, Py_ssize_t content_len)
+{
+    Py_ssize_t split = find_kv_split(content, content_len);
+    if (split >= 0)
+        return split;
+    if (content_len > 1 && content[content_len - 1] == ':')
+        return content_len - 1;
+    return -1;
+}
+
 /* ------------------------------------------------------------------ */
-/* Helper: parse "- key: value" item inline (avoids double find_kv)    */
-/* Returns new dict with initial k:v, or NULL on error.                */
+/* Parse the first field carried by an object item's dash line.        */
+/*                                                                      */
+/* Input slices are borrowed from the token vector. The returned dict  */
+/* is a new reference. Multiline content is consumed through st->pos.  */
 /* ------------------------------------------------------------------ */
 
 static PyObject *
-parse_dash_kv_item(const char *after, Py_ssize_t after_len,
-                   Py_ssize_t split)
+parse_dash_kv_item(ParserState *st, const char *after,
+                   Py_ssize_t after_len, Py_ssize_t split)
 {
     PyObject *initial = PyDict_New();
     if (!initial) return NULL;
     PyObject *k = parse_key(after, split);
-    PyObject *v = parse_scalar(after + split + 2, after_len - split - 2);
+    const char *value_text = after + split + 1;
+    Py_ssize_t value_len = 0;
+    if (split + 1 < after_len && after[split + 1] == ' ') {
+        value_text++;
+        value_len = after_len - split - 2;
+    }
+    PyObject *v = parse_field_value(st, value_text, value_len);
     if (!k || !v) {
         Py_XDECREF(k);
         Py_XDECREF(v);
@@ -1356,11 +1399,11 @@ parse_array_body(ParserState *st, int depth)
                 const char *after = content + 2;
                 Py_ssize_t after_len = content_len - 2;
                 /* Single call to find_kv_split (eliminates double call) */
-                Py_ssize_t split = find_kv_split(after, after_len);
+                Py_ssize_t split = find_item_field_split(after, after_len);
                 if (split >= 0) {
                     pos++;
                     st->pos = pos;
-                    PyObject *initial = parse_dash_kv_item(after, after_len, split);
+                    PyObject *initial = parse_dash_kv_item(st, after, after_len, split);
                     if (!initial) { Py_DECREF(items); return NULL; }
                     PyObject *item_obj = parse_item_object(st, depth, initial);
                     Py_DECREF(initial);
@@ -1427,11 +1470,11 @@ parse_array_body(ParserState *st, int depth)
         {
             const char *after = content + 2;
             Py_ssize_t after_len = content_len - 2;
-            Py_ssize_t split = find_kv_split(after, after_len);
+            Py_ssize_t split = find_item_field_split(after, after_len);
             if (split >= 0) {
                 pos++;
                 st->pos = pos;
-                PyObject *initial = parse_dash_kv_item(after, after_len, split);
+                PyObject *initial = parse_dash_kv_item(st, after, after_len, split);
                 if (!initial) { Py_DECREF(items); return NULL; }
                 PyObject *item_obj = parse_item_object(st, depth, initial);
                 Py_DECREF(initial);
@@ -1490,12 +1533,12 @@ parse_array_body(ParserState *st, int depth)
             Py_ssize_t after_len = content_len - 2;
 
             /* Single find_kv_split call — no separate is_kv_content */
-            Py_ssize_t split = find_kv_split(after, after_len);
+            Py_ssize_t split = find_item_field_split(after, after_len);
             if (split >= 0) {
                 /* Object item with first field */
                 pos++;
                 st->pos = pos;
-                PyObject *initial = parse_dash_kv_item(after, after_len, split);
+                PyObject *initial = parse_dash_kv_item(st, after, after_len, split);
                 if (!initial) { Py_DECREF(items); return NULL; }
                 PyObject *item_obj = parse_item_object(st, depth, initial);
                 Py_DECREF(initial);
@@ -1595,12 +1638,22 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
                         stripped[stripped_len - 1] == '\r'))
                     stripped_len--;
 
-                /* Single find_kv_split call */
-                Py_ssize_t split = find_kv_split(stripped, stripped_len);
+                Py_ssize_t split = find_item_field_split(stripped,
+                                                          stripped_len);
                 if (split >= 0) {
                     PyObject *k = parse_key(stripped, split);
-                    PyObject *v = parse_scalar(stripped + split + 2,
-                                                stripped_len - split - 2);
+                    const char *value_text = stripped + split + 1;
+                    Py_ssize_t value_len = 0;
+                    if (split + 1 < stripped_len
+                        && stripped[split + 1] == ' ')
+                    {
+                        value_text++;
+                        value_len = stripped_len - split - 2;
+                    }
+                    pos++;
+                    st->pos = pos;
+                    PyObject *v = parse_field_value(st, value_text,
+                                                    value_len);
                     if (!k || !v) {
                         Py_XDECREF(k);
                         Py_XDECREF(v);
@@ -1618,7 +1671,7 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
                     }
                     Py_DECREF(k);
                     Py_DECREF(v);
-                    pos++;
+                    pos = st->pos;
                     continue;
                 }
             }
@@ -1641,7 +1694,7 @@ parse_item_object(ParserState *st, int array_depth, PyObject *initial)
                         while (ns_len > 0 &&
                                (ns[ns_len - 1] == ' ' || ns[ns_len - 1] == '\t'))
                             ns_len--;
-                        if (find_kv_split(ns, ns_len) >= 0) {
+                        if (find_item_field_split(ns, ns_len) >= 0) {
                             pos++;
                             continue;
                         }

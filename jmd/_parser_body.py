@@ -23,6 +23,19 @@ from ._scalars import parse_key, parse_scalar, split_kv
 from ._tokenizer import Line, is_thematic_break
 
 
+def _is_item_field(content: str) -> bool:
+    """Return whether array-item content starts an object field."""
+    return _kv_match(content) is not None or content[-1:] == ":"
+
+
+def _split_item_field(content: str) -> tuple[str, str]:
+    """Split an array-item field, including an empty multiline opener."""
+    split = split_kv(content)
+    if split is not None:
+        return split
+    return content[:-1], ""
+
+
 class JMDBodyParser:
     """Parse one tokenized JMD body using a single mutable cursor."""
 
@@ -63,6 +76,33 @@ class JMDBodyParser:
         """Parse consecutive blockquote lines at the cursor."""
         value, self._pos = parse_blockquote_from(self._lines, self._pos)
         return value
+
+    def _parse_field_value(self, value_text: str) -> Any:
+        """Parse a scalar or multiline field value at the current cursor."""
+        if value_text == "":
+            next_line = self._cur()
+            if (
+                next_line
+                and next_line.heading_depth == 0
+                and next_line.raw_text.strip().startswith(">")
+            ):
+                return self._parse_blockquote()
+            return ""
+        if value_text == "|" or value_text == ">":
+            return self._parse_block_scalar(folded=(value_text == ">"))
+        return parse_scalar(value_text)
+
+    def _parse_item_with_first_field(
+        self,
+        array_depth: int,
+        content: str,
+    ) -> dict[str, Any]:
+        """Parse an object item whose dash line carries its first field."""
+        key_part, value_text = _split_item_field(content)
+        initial = {
+            parse_key(key_part): self._parse_field_value(value_text),
+        }
+        return self._parse_item_object(array_depth, initial_fields=initial)
 
     def _parse_object_body(self, depth: int) -> dict[str, Any]:
         """Parse fields belonging to an object scope at ``depth``."""
@@ -328,20 +368,13 @@ class JMDBodyParser:
                     and content[1] == " "
                 ):
                     content_after = content[2:]
-                    if _kv_match(content_after):
+                    if _is_item_field(content_after):
                         pos += 1
                         self._pos = pos
-                        key_part, val_part = split_kv(content_after) or (
-                            content_after,
-                            "",
-                        )
-                        initial = {
-                            parse_key(key_part): parse_scalar(val_part)
-                        }
                         items_append(
-                            self._parse_item_object(
+                            self._parse_item_with_first_field(
                                 depth,
-                                initial_fields=initial,
+                                content_after,
                             )
                         )
                         pos = self._pos
@@ -371,18 +404,13 @@ class JMDBodyParser:
                 and content[1] == " "
             ):
                 content_after = content[2:]
-                if _kv_match(content_after):
+                if _is_item_field(content_after):
                     pos += 1
                     self._pos = pos
-                    key_part, val_part = split_kv(content_after) or (
-                        content_after,
-                        "",
-                    )
-                    initial = {parse_key(key_part): parse_scalar(val_part)}
                     items_append(
-                        self._parse_item_object(
+                        self._parse_item_with_first_field(
                             depth,
-                            initial_fields=initial,
+                            content_after,
                         )
                     )
                     pos = self._pos
@@ -407,18 +435,13 @@ class JMDBodyParser:
                 and content[1] == " "
             ):
                 content_after = content[2:]
-                if _kv_match(content_after):
+                if _is_item_field(content_after):
                     pos += 1
                     self._pos = pos
-                    key_part, val_part = split_kv(content_after) or (
-                        content_after,
-                        "",
-                    )
-                    initial = {parse_key(key_part): parse_scalar(val_part)}
                     items_append(
-                        self._parse_item_object(
+                        self._parse_item_with_first_field(
                             depth,
-                            initial_fields=initial,
+                            content_after,
                         )
                     )
                     pos = self._pos
@@ -469,20 +492,20 @@ class JMDBodyParser:
                     and raw[1] == " "
                 ):
                     stripped = raw.lstrip(" ")
-                    if _kv_match(stripped):
-                        key_part, val_part = split_kv(stripped) or (
-                            stripped,
-                            "",
-                        )
+                    if _is_item_field(stripped):
+                        key_part, value_text = _split_item_field(stripped)
+                        pos += 1
+                        self._pos = pos
+                        value = self._parse_field_value(value_text)
                         set_scalar(
                             obj,
                             kinds,
                             parse_key(key_part),
-                            parse_scalar(val_part),
+                            value,
                             line.number,
                             is_heading=False,
                         )
-                        pos += 1
+                        pos = self._pos
                         continue
 
                 if line.heading_depth == -1:
@@ -500,7 +523,7 @@ class JMDBodyParser:
                             and len(nxt_raw) >= 3
                             and nxt_raw[0] == " "
                             and nxt_raw[1] == " "
-                            and _kv_match(nxt_raw.lstrip(" "))
+                            and _is_item_field(nxt_raw.lstrip(" "))
                         ):
                             pos += 1
                             continue
