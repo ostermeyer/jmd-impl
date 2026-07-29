@@ -85,6 +85,22 @@ def _parse_line(number: int, raw: str, text: str) -> Line:
 _BLANK_LINE = Line(0, "", -1, "")  # Sentinel for blank lines
 
 
+def tokenize_line(number: int, raw: str) -> Line:
+    """Tokenize one source line that has already been separated.
+
+    Args:
+        number: 1-based source line number.
+        raw: Source line without its line ending.
+
+    Returns:
+        One line token, including the blank-line sentinel form.
+    """
+    text = raw.strip()
+    if text:
+        return _parse_line(number, raw, text)
+    return Line(number, "", -1, "")
+
+
 def tokenize(source: str) -> list[Line]:
     """Tokenize a JMD source string into a list of Line objects.
 
@@ -97,14 +113,7 @@ def tokenize(source: str) -> list[Line]:
     Returns:
         List of Line tokens including blank-line sentinels.
     """
-    result: list[Line] = []
-    _result_append = result.append
-    _line = Line
-    _pl = _parse_line
-    for i, raw in enumerate(source.splitlines()):
-        text = raw.strip()
-        if text:
-            _result_append(_pl(i + 1, raw, text))
-        else:
-            _result_append(_line(i + 1, "", -1, ""))
-    return result
+    return [
+        tokenize_line(i + 1, raw)
+        for i, raw in enumerate(source.splitlines())
+    ]
