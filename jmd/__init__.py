@@ -40,6 +40,7 @@ from ._envelope import Envelope, Mode, mode_to_label_prefix
 from ._error import JMDError, JMDErrorItem, is_error_document, parse_error
 from ._html import JMDHTMLRenderer
 from ._parser import JMDParser
+from ._parser_header import normalize_document_source
 from ._query import (
     Condition,
     JMDQuery,
@@ -139,6 +140,7 @@ def _parse_with_c_body(source: str) -> Envelope:
     root heading onwards is then passed to the C ``parse`` function.
     Both parts are assembled into a canonical :class:`Envelope`.
     """
+    source = normalize_document_source(source)
     parser = JMDParser()
     mode, label, frontmatter, body_line = parser.parse_header(source)
     body = "\n".join(source.splitlines()[body_line - 1:])

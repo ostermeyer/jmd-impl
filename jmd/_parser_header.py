@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ._envelope import Mode, split_mode_label
-from ._parser_common import parse_blockquote_from
+from ._parser_common import JMDParseError, parse_blockquote_from
 from ._scalars import parse_key, parse_scalar, split_kv
 from ._tokenizer import Line, is_thematic_break, tokenize
 
@@ -24,6 +24,21 @@ class ParsedHeader:
     body_line: int
 
 
+def normalize_document_source(source: str) -> str:
+    """Validate line endings and consume one tolerated leading BOM."""
+    for position, character in enumerate(source):
+        if character != "\r":
+            continue
+        if position + 1 < len(source) and source[position + 1] == "\n":
+            continue
+        raise JMDParseError(
+            kind="lone_carriage_return",
+            line=source.count("\n", 0, position) + 1,
+            key="",
+        )
+    return source.removeprefix("\ufeff")
+
+
 def parse_document_header(source: str) -> ParsedHeader:
     """Parse frontmatter and the single root heading.
 
@@ -37,7 +52,7 @@ def parse_document_header(source: str) -> ParsedHeader:
         ValueError: If the document is empty, lacks a root heading, or the
             first structural heading is not at depth one.
     """
-    lines = tokenize(source)
+    lines = tokenize(normalize_document_source(source))
     if not lines:
         raise ValueError("Empty document")
 
