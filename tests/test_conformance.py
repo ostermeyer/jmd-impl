@@ -1,36 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Conformance tests against the canonical JMD test suite.
+"""Conformance tests against the canonical JMD v0.3.5 fixture suite.
 
-Fixtures live in ``jmd-spec`` at ``conformance/``.  They are located
-via the first path that exists, in this order:
+The suite deliberately keeps parser and serializer evidence independent:
 
-1. the ``JMD_FIXTURES`` environment variable (explicit override)
-2. ``vendor/jmd-spec/conformance/`` (git submodule, preferred in CI)
-3. ``../jmd-spec/conformance/`` (sibling checkout in a workspace)
+* parser tests receive their body oracle from ``.json`` fixtures;
+* serializer tests receive their body value from ``.json`` rather than from a
+  preceding body parse;
+* parser and serializer backends are selected independently;
+* round-trip tests exercise every parser/serializer combination; and
+* the direct :class:`jmd.JMDParser` contract is separate from the public
+  pure-Python fallback.
 
-Each fixture is a pair ``<name>.jmd`` + ``<name>.json``.  Fixtures
-are grouped by document mode:
-
-* ``data/``, ``schema/``, ``query/``, ``delete/`` — canonical
-  documents.  Three tests run for every pair:
-
-  1. **Parse**     — ``jmd.parse(.jmd).value`` deep-equals ``.json``
-                     and the envelope ``.mode`` matches the directory
-  2. **Serialize** — ``jmd.serialize(envelope)`` equals ``.jmd``
-                     byte-for-byte (envelope from a prior parse)
-  3. **Round-trip** — parse → serialize → parse again preserves
-                      the envelope (§3.6.3)
-
-* ``tolerance/`` — inputs exercising parser-tolerance rules where the
-  canonical output diverges from the input.  Only the **Parse** test
-  runs; Serialize would re-canonicalize and therefore not match.
-
-Every test runs against both available backends — the C accelerator
-(the production default when compiled) and the pure-Python fallback
-(what users without a compiler get).  The ``backend`` fixture
-monkeypatches ``_HAS_CPARSER`` / ``_HAS_CSERIALIZER`` to force the
-fallback path; without this, a regression in the pure-Python code
-would be invisible whenever a ``.so`` is present.
+Fixture discovery is fail-loud. The explicit ``JMD_FIXTURES`` override wins,
+followed by the vendored specification and then a sibling checkout. A missing
+root, missing required directory, or orphaned fixture aborts collection rather
+than turning qualification into a passing suite of skips.
 """
 
 from __future__ import annotations
@@ -38,205 +22,293 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal, cast
 
 import pytest
 
 import jmd
+from jmd._parser import JMDParseError
+
+ParserName = Literal["c", "py", "direct-py"]
+SerializerName = Literal["c", "py"]
+ParseCallable = Callable[[str], jmd.Envelope]
+SerializeCallable = Callable[[jmd.Envelope], str]
+
+_REQUIRED_DIRECTORIES = frozenset(
+    {"data", "delete", "tolerance", "must-fail"}
+)
+_C_PARSER_AVAILABLE = jmd._HAS_CPARSER
+_C_SERIALIZER_AVAILABLE = jmd._HAS_CSERIALIZER
 
 
-def _fixtures_root() -> pathlib.Path | None:
-    """Return the conformance fixtures root or ``None`` if not found."""
+@dataclass(frozen=True)
+class ParserSurface:
+    """One independently selected parser surface."""
+
+    name: ParserName
+    parse: ParseCallable
+
+
+@dataclass(frozen=True)
+class SerializerSurface:
+    """One independently selected serializer surface."""
+
+    name: SerializerName
+    serialize: SerializeCallable
+
+
+def _fixtures_root() -> pathlib.Path:
+    """Return the required conformance root and fail loudly when absent."""
     env = os.environ.get("JMD_FIXTURES")
     if env:
-        return pathlib.Path(env)
+        root = pathlib.Path(env).expanduser().resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(
+                f"JMD_FIXTURES does not name a directory: {root}"
+            )
+        return root
+
     here = pathlib.Path(__file__).resolve().parent
     repo_root = here.parent
     for candidate in (
         repo_root / "vendor" / "jmd-spec" / "conformance",
         repo_root.parent / "jmd-spec" / "conformance",
     ):
-        if candidate.exists():
-            return candidate
-    return None
+        if candidate.is_dir():
+            return candidate.resolve()
+
+    raise FileNotFoundError(
+        "JMD conformance fixtures are required; initialize vendor/jmd-spec, "
+        "provide a sibling jmd-spec checkout, or set JMD_FIXTURES"
+    )
 
 
-def _collect_pairs() -> list[tuple[str, pathlib.Path, pathlib.Path]]:
-    """Return (mode, jmd_path, json_path) for every fixture pair."""
-    root = _fixtures_root()
-    if root is None:
-        return []
+def _validate_fixture_layout(root: pathlib.Path) -> None:
+    """Reject incomplete fixture trees and orphaned fixture files."""
+    missing_directories = sorted(
+        name for name in _REQUIRED_DIRECTORIES if not (root / name).is_dir()
+    )
+    if missing_directories:
+        raise FileNotFoundError(
+            "missing conformance directories: "
+            + ", ".join(missing_directories)
+        )
+
+    for mode_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        jmd_stems = {path.stem for path in mode_dir.glob("*.jmd")}
+        if mode_dir.name == "must-fail":
+            oracle_stems = {
+                path.name.removesuffix(".error.json")
+                for path in mode_dir.glob("*.error.json")
+            }
+        else:
+            oracle_stems = {path.stem for path in mode_dir.glob("*.json")}
+
+        missing_oracles = sorted(jmd_stems - oracle_stems)
+        missing_inputs = sorted(oracle_stems - jmd_stems)
+        if missing_oracles or missing_inputs:
+            details: list[str] = []
+            if missing_oracles:
+                details.append(f"missing oracle for {missing_oracles!r}")
+            if missing_inputs:
+                details.append(f"missing JMD for {missing_inputs!r}")
+            raise FileNotFoundError(
+                f"incomplete fixtures in {mode_dir}: " + "; ".join(details)
+            )
+
+
+def _collect_pairs(
+    root: pathlib.Path,
+) -> list[tuple[str, pathlib.Path, pathlib.Path]]:
+    """Return ``(mode, jmd_path, json_path)`` for every fixture pair."""
     pairs: list[tuple[str, pathlib.Path, pathlib.Path]] = []
-    for mode_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+    for mode_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        if mode_dir.name == "must-fail":
+            continue
         for jmd_path in sorted(mode_dir.glob("*.jmd")):
-            json_path = jmd_path.with_suffix(".json")
-            if json_path.exists():
-                pairs.append((mode_dir.name, jmd_path, json_path))
+            pairs.append(
+                (mode_dir.name, jmd_path, jmd_path.with_suffix(".json"))
+            )
+    if not pairs:
+        raise FileNotFoundError(f"no paired conformance fixtures in {root}")
     return pairs
 
 
-def _collect_must_fail() -> list[tuple[pathlib.Path, pathlib.Path]]:
-    """Return (jmd_path, error_json_path) for every must-fail fixture pair."""
-    root = _fixtures_root()
-    if root is None:
-        return []
-    mf_dir = root / "must-fail"
-    if not mf_dir.is_dir():
-        return []
-    pairs: list[tuple[pathlib.Path, pathlib.Path]] = []
-    for jmd_path in sorted(mf_dir.glob("*.jmd")):
-        err_path = jmd_path.with_suffix(".error.json")
-        if err_path.exists():
-            pairs.append((jmd_path, err_path))
+def _collect_must_fail(
+    root: pathlib.Path,
+) -> list[tuple[pathlib.Path, pathlib.Path]]:
+    """Return every must-fail input and structured-error oracle pair."""
+    pairs = [
+        (jmd_path, jmd_path.with_suffix(".error.json"))
+        for jmd_path in sorted((root / "must-fail").glob("*.jmd"))
+    ]
+    if not pairs:
+        raise FileNotFoundError(f"no must-fail fixtures in {root}")
     return pairs
 
 
-_PAIRS = [p for p in _collect_pairs() if p[0] != "must-fail"]
-_CANONICAL = [p for p in _PAIRS if p[0] != "tolerance"]
-_CANONICAL_IDS = [f"{m}/{p.stem}" for m, p, _ in _CANONICAL]
-_MUST_FAIL = _collect_must_fail()
-_MUST_FAIL_IDS = [f"must-fail/{p.stem}" for p, _ in _MUST_FAIL]
-
-# Which backends to exercise.  "c" uses the C-accelerated parser/
-# serializer if compiled; "py" forces the pure-Python fallback by
-# monkey-patching the availability flags.  Having both paths in the
-# conformance suite guards against silent drift between the two — the
-# original wrapper picked one at import time, leaving the other path
-# untested.
-_BACKENDS = ["c", "py"]
+def _load_value_oracle(
+    jmd_path: pathlib.Path,
+    json_path: pathlib.Path,
+) -> tuple[str, object]:
+    """Load fixture text and its independent JSON body oracle."""
+    jmd_text = jmd_path.read_text(encoding="utf-8")
+    expected = json.loads(json_path.read_text(encoding="utf-8"))
+    return jmd_text, expected
 
 
-@pytest.fixture(params=_BACKENDS)
-def backend(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch,
-) -> str:
-    """Select the parser/serializer backend for a test run.
+def _load_envelope_oracle(
+    mode: str,
+    jmd_path: pathlib.Path,
+    json_path: pathlib.Path,
+) -> tuple[str, jmd.Envelope]:
+    """Build a serializer oracle without parsing the fixture body."""
+    jmd_text, expected = _load_value_oracle(jmd_path, json_path)
+    parsed_mode, label, frontmatter, _ = jmd.JMDParser().parse_header(jmd_text)
+    assert parsed_mode == mode
+    return jmd_text, jmd.Envelope(
+        mode=parsed_mode,
+        label=label,
+        value=expected,
+        frontmatter=frontmatter,
+    )
 
-    The ``"c"`` param leaves the module flags alone (C accelerator
-    wins if compiled).  The ``"py"`` param disables both accelerators
-    at the public-API boundary; :class:`jmd.JMDParser` is already
-    pure Python (no internal C dispatch), so flipping the two
-    ``_HAS_*`` flags in :mod:`jmd` is sufficient to force the
-    Python parse + serialize paths.
-    """
-    backend_name: str = request.param
-    if backend_name == "py":
+
+_FIXTURES_ROOT = _fixtures_root()
+_validate_fixture_layout(_FIXTURES_ROOT)
+_PAIRS = _collect_pairs(_FIXTURES_ROOT)
+_CANONICAL = [pair for pair in _PAIRS if pair[0] != "tolerance"]
+_CANONICAL_IDS = [
+    f"{mode}/{jmd_path.stem}" for mode, jmd_path, _ in _CANONICAL
+]
+_MUST_FAIL = _collect_must_fail(_FIXTURES_ROOT)
+_MUST_FAIL_IDS = [
+    f"must-fail/{jmd_path.stem}" for jmd_path, _ in _MUST_FAIL
+]
+_PARSER_BACKENDS: tuple[ParserName, ...] = ("c", "py", "direct-py")
+_SERIALIZER_BACKENDS: tuple[SerializerName, ...] = ("c", "py")
+
+
+@pytest.fixture(params=_PARSER_BACKENDS)
+def parser_surface(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> ParserSurface:
+    """Select one parser surface without changing serializer dispatch."""
+    name = cast(ParserName, request.param)
+    if name == "c":
+        if not _C_PARSER_AVAILABLE:
+            pytest.skip("C parser unavailable; c-labelled case not executed")
+        monkeypatch.setattr(jmd, "_HAS_CPARSER", True)
+        return ParserSurface(name=name, parse=jmd.parse)
+    if name == "py":
         monkeypatch.setattr(jmd, "_HAS_CPARSER", False)
+        return ParserSurface(name=name, parse=jmd.parse)
+    return ParserSurface(name=name, parse=jmd.JMDParser().parse)
+
+
+@pytest.fixture(params=_SERIALIZER_BACKENDS)
+def serializer_surface(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> SerializerSurface:
+    """Select one serializer backend without changing parser dispatch."""
+    name = cast(SerializerName, request.param)
+    if name == "c":
+        if not _C_SERIALIZER_AVAILABLE:
+            pytest.skip(
+                "C serializer unavailable; c-labelled case not executed"
+            )
+        monkeypatch.setattr(jmd, "_HAS_CSERIALIZER", True)
+    else:
         monkeypatch.setattr(jmd, "_HAS_CSERIALIZER", False)
-    return backend_name
+    return SerializerSurface(name=name, serialize=jmd.serialize)
 
 
-@pytest.mark.skipif(
-    not _PAIRS,
-    reason="jmd-spec fixtures not found — clone ostermeyer/jmd-spec as a "
-    "sibling or set JMD_FIXTURES",
+@pytest.mark.parametrize(
+    "fixtures_root",
+    [pytest.param(_FIXTURES_ROOT, id=f"source={_FIXTURES_ROOT}")],
 )
+def test_fixture_source(fixtures_root: pathlib.Path) -> None:
+    """Expose the exact fixture source in the qualification test IDs."""
+    assert fixtures_root == _FIXTURES_ROOT
+    assert all(
+        (fixtures_root / name).is_dir() for name in _REQUIRED_DIRECTORIES
+    )
+
+
 @pytest.mark.parametrize(
     ("mode", "jmd_path", "json_path"),
     _PAIRS,
-    ids=[f"{m}/{p.stem}" for m, p, _ in _PAIRS],
+    ids=[f"{mode}/{path.stem}" for mode, path, _ in _PAIRS],
 )
 def test_parse(
-    backend: str,
+    parser_surface: ParserSurface,
     mode: str,
     jmd_path: pathlib.Path,
     json_path: pathlib.Path,
 ) -> None:
-    """Parse the fixture; envelope.value matches the .json oracle.
-
-    Also asserts that the envelope mode matches the fixture's
-    directory name (``data/``, ``schema/``, ``query/``, ``delete/``)
-    — the tolerance/ tree carries its own canonical mode in the fixture.
-    """
-    del backend
-    jmd_text = jmd_path.read_text(encoding="utf-8")
-    expected = json.loads(json_path.read_text(encoding="utf-8"))
-    env = jmd.parse(jmd_text)
-    assert env.value == expected
+    """Parse a fixture and compare its body with the JSON oracle."""
+    jmd_text, expected = _load_value_oracle(jmd_path, json_path)
+    envelope = parser_surface.parse(jmd_text)
+    assert envelope.value == expected
     if mode in ("data", "schema", "query", "delete"):
-        assert env.mode == mode
+        assert envelope.mode == mode
 
 
-@pytest.mark.skipif(
-    not _CANONICAL,
-    reason="jmd-spec canonical fixtures not found",
-)
 @pytest.mark.parametrize(
-    ("mode", "jmd_path", "json_path"), _CANONICAL, ids=_CANONICAL_IDS,
+    ("mode", "jmd_path", "json_path"),
+    _CANONICAL,
+    ids=_CANONICAL_IDS,
 )
 def test_serialize(
-    backend: str,
+    serializer_surface: SerializerSurface,
     mode: str,
     jmd_path: pathlib.Path,
     json_path: pathlib.Path,
 ) -> None:
-    """Serialize the envelope and byte-compare against the .jmd fixture.
-
-    Per §3.6.3 the canonical serializer entry takes an envelope
-    directly. Parsing the fixture and serializing the envelope is
-    the canonical round-trip path.
-    """
-    del backend, mode
-    jmd_text = jmd_path.read_text(encoding="utf-8")
-    expected = json.loads(json_path.read_text(encoding="utf-8"))
-    env = jmd.parse(jmd_text)
-    # Sanity check the envelope before serializing — guards against
-    # the serializer compensating for a parse bug we'd rather see.
-    assert env.value == expected
-    out = jmd.serialize(env)
-    # Fixture files end with a single trailing newline; the serializer
-    # mirrors the byte form emitted by the C-accelerated reference (no
-    # trailing newline — callers add it when writing a file).
-    assert out + "\n" == jmd_text
+    """Serialize an independent body oracle to canonical bytes."""
+    jmd_text, oracle = _load_envelope_oracle(mode, jmd_path, json_path)
+    output = serializer_surface.serialize(oracle)
+    assert output + "\n" == jmd_text
 
 
-@pytest.mark.skipif(
-    not _CANONICAL,
-    reason="jmd-spec canonical fixtures not found",
-)
 @pytest.mark.parametrize(
-    ("mode", "jmd_path", "json_path"), _CANONICAL, ids=_CANONICAL_IDS,
+    ("mode", "jmd_path", "json_path"),
+    _CANONICAL,
+    ids=_CANONICAL_IDS,
 )
 def test_roundtrip(
-    backend: str,
+    parser_surface: ParserSurface,
+    serializer_surface: SerializerSurface,
     mode: str,
     jmd_path: pathlib.Path,
     json_path: pathlib.Path,
 ) -> None:
-    """Parse → serialize → parse preserves the envelope (§3.6.3)."""
-    del backend, mode
-    jmd_text = jmd_path.read_text(encoding="utf-8")
-    expected = json.loads(json_path.read_text(encoding="utf-8"))
-    env1 = jmd.parse(jmd_text)
-    env2 = jmd.parse(jmd.serialize(env1))
-    assert env2.value == expected
-    assert env2.mode == env1.mode
-    assert env2.label == env1.label
-    assert env2.frontmatter == env1.frontmatter
+    """Exercise every independent parser/serializer combination."""
+    jmd_text, oracle = _load_envelope_oracle(mode, jmd_path, json_path)
+    serialized = serializer_surface.serialize(oracle)
+    reparsed = parser_surface.parse(serialized)
+    assert serialized + "\n" == jmd_text
+    assert reparsed == oracle
 
 
-@pytest.mark.skipif(
-    not _MUST_FAIL,
-    reason="jmd-spec must-fail fixtures not found",
-)
 @pytest.mark.parametrize(
-    ("jmd_path", "err_path"), _MUST_FAIL, ids=_MUST_FAIL_IDS,
+    ("jmd_path", "err_path"),
+    _MUST_FAIL,
+    ids=_MUST_FAIL_IDS,
 )
 def test_must_fail(
-    backend: str,
+    parser_surface: ParserSurface,
     jmd_path: pathlib.Path,
     err_path: pathlib.Path,
 ) -> None:
-    """Parser MUST reject the fixture with the expected structured error.
-
-    Asserts only kind and line — wording and exception subclass identity
-    are implementation-specific. ``key`` and other advisory fields in
-    the .error.json are not asserted.
-    """
-    del backend  # only used for the test id
-    from jmd._parser import JMDParseError
+    """Reject invalid input with the expected error kind and source line."""
     expected = json.loads(err_path.read_text(encoding="utf-8"))
     jmd_text = jmd_path.read_text(encoding="utf-8")
     with pytest.raises(JMDParseError) as exc:
-        jmd.parse(jmd_text)
+        parser_surface.parse(jmd_text)
     assert exc.value.kind == expected["kind"]
     assert exc.value.line == expected["line"]

@@ -176,14 +176,26 @@ class TestJMDStreamParser:
         types = [e.type for e in evs]
         assert types == ["DOCUMENT_START", "FIELD", "DOCUMENT_END"]
 
-    def test_process_line_finish(self) -> None:
-        """Test push API: process_line accumulates, finish drains."""
-        p = JMDStreamParser()
-        assert p.process_line("# Doc") == []
-        assert p.process_line("x: 1") == []
-        evs = p.finish()
-        types = [e.type for e in evs]
-        assert types == ["DOCUMENT_START", "FIELD", "DOCUMENT_END"]
+    def test_process_line_emits_completed_lines(self) -> None:
+        """Emit each semantic event when its completed line arrives (§18.2)."""
+        parser = JMDStreamParser()
+        root_events = parser.process_line("# Doc")
+        assert [event.type for event in root_events] == ["DOCUMENT_START"]
+
+        field_events = parser.process_line("x: 1")
+        assert [event.type for event in field_events] == ["FIELD"]
+        assert [event.type for event in parser.finish()] == ["DOCUMENT_END"]
+
+    def test_process_line_streams_blockquote_content(self) -> None:
+        """Emit FIELD_START and each FIELD_CONTENT line independently."""
+        parser = JMDStreamParser()
+        parser.process_line("# Doc")
+
+        start_events = parser.process_line("note:")
+        assert [event.type for event in start_events] == ["FIELD_START"]
+
+        content_events = parser.process_line("> hello")
+        assert [event.type for event in content_events] == ["FIELD_CONTENT"]
 
     def test_finish_idempotent(self) -> None:
         """Test that a second finish() call returns []."""
