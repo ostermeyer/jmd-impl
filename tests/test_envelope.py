@@ -243,4 +243,4 @@ class TestEnvelopeValidation:
     def test_all_four_modes_accepted(self) -> None:
         """All four spec modes pass construction validation."""
         for mode in ("data", "schema", "query", "delete"):
-            Envelope(mode=mode, label="X", value={})  # type: ignore[arg-type]
+            Envelope(mode=mode, label="X", value={})
