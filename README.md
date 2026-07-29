@@ -13,7 +13,7 @@ pip install git+https://github.com/ostermeyer/jmd-impl.git
 Or pin a specific release:
 
 ```bash
-pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.6.0
+pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.7.0
 ```
 
 Pre-built wheels for Linux, macOS, and Windows are attached to each
@@ -21,7 +21,7 @@ Pre-built wheels for Linux, macOS, and Windows are attached to each
 installed directly:
 
 ```bash
-pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.6.0/jmd_format-0.6.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.7.0/jmd_format-0.7.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 The C extensions are built automatically during installation if a C compiler is available. If not, the pure-Python fallback is used transparently.
@@ -70,12 +70,33 @@ error = parse_error("# Error\nstatus: 404\ncode: not_found\nmessage: Not found")
 
 ## Streaming
 
+Use `jmd_stream()` when the complete source is already available:
+
 ```python
 from jmd import jmd_stream
 
 for event in jmd_stream(source):
     print(event)
 ```
+
+For incremental input, consume the events returned by every
+`process_line()` call. `finish()` emits only events still pending at end of
+input:
+
+```python
+from jmd import JMDStreamParser
+
+parser = JMDStreamParser()
+for line in source_lines:
+    for event in parser.process_line(line):
+        print(event)
+for event in parser.finish():
+    print(event)
+```
+
+Canonical multiline fields emit `FIELD_START` followed by one
+`FIELD_CONTENT` event per blockquote line. The `stream_events()` and
+`to_lines()` async adapters preserve the same incremental behavior.
 
 ## XML Mapping
 
