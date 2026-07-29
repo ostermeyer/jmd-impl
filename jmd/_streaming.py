@@ -4,10 +4,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator, Generator, Iterable
-from dataclasses import dataclass
 from typing import Any
 
-from ._envelope import Mode, split_mode_label
+from ._envelope import split_mode_label
 from ._parser_common import (
     _K_ARRAY_PROMOTED,
     _K_ARRAY_SIGIL,
@@ -20,6 +19,7 @@ from ._parser_common import (
     parse_block_scalar_from,
 )
 from ._scalars import parse_key, parse_scalar
+from ._stream_events import StreamEvent as StreamEvent
 from ._tokenizer import is_thematic_break, tokenize
 
 # §7.4 sigil-lock entry — one per object/item/doc scope on the stack.
@@ -70,39 +70,6 @@ def _register_key(
             kind="repeated_scalar_key", line=line_num, key=key,
             form={"existing": existing, "new": new_kind},
         )
-
-
-@dataclass
-class StreamEvent:
-    """A single event emitted by the JMD streaming parser.
-
-    The ``mode`` and ``frontmatter`` fields are populated only on
-    ``DOCUMENT_START`` events — they together with ``key`` (the root
-    label) constitute the full envelope header per spec §18. All
-    subsequent events carry body content only and leave both fields
-    ``None``.
-    """
-
-    type: str   # DOCUMENT_START | DOCUMENT_END | FIELD | OBJECT_START |
-    # OBJECT_END | ARRAY_START | ARRAY_END | ITEM_START | ITEM_END | ITEM_VALUE
-    key: str | None = None
-    value: Any = None
-    # Envelope header — set only on DOCUMENT_START (§18, mirrors §3.6).
-    mode: Mode | None = None
-    frontmatter: dict[str, Any] | None = None
-
-    def __repr__(self) -> str:
-        if self.type == "DOCUMENT_START":
-            return (
-                f"StreamEvent(DOCUMENT_START, mode={self.mode!r}, "
-                f"label={self.key!r}, frontmatter={self.frontmatter!r})"
-            )
-        if self.value is not None:
-            return (f"StreamEvent({self.type}, key={self.key!r}, "
-                    f"value={self.value!r})")
-        if self.key:
-            return f"StreamEvent({self.type}, key={self.key!r})"
-        return f"StreamEvent({self.type})"
 
 
 def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
