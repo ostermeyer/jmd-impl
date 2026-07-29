@@ -99,9 +99,9 @@ ser_write_quoted(OutBuf *ob, const char *s, Py_ssize_t len)
     Py_DECREF(json_mod);
     Py_DECREF(pystr);
     if (!result) return 0;
-    const char *rstr = PyUnicode_AsUTF8(result);
+    Py_ssize_t rlen;
+    const char *rstr = PyUnicode_AsUTF8AndSize(result, &rlen);
     if (!rstr) { Py_DECREF(result); return 0; }
-    Py_ssize_t rlen = (Py_ssize_t)strlen(rstr);
     int ok = outbuf_append(ob, rstr, rlen);
     Py_DECREF(result);
     return ok;
@@ -137,8 +137,8 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
             PyErr_Clear();
             PyObject *s = PyObject_Str(value);
             if (!s) return 0;
-            const char *cs = PyUnicode_AsUTF8(s);
-            Py_ssize_t slen = cs ? (Py_ssize_t)strlen(cs) : 0;
+            Py_ssize_t slen;
+            const char *cs = PyUnicode_AsUTF8AndSize(s, &slen);
             int ok = cs ? outbuf_append(ob, cs, slen) : 0;
             Py_DECREF(s);
             return ok;
@@ -154,17 +154,17 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
          * 249.94999999999999).  This matches Python's str(float). */
         PyObject *s = PyObject_Repr(value);
         if (!s) return 0;
-        const char *cs = PyUnicode_AsUTF8(s);
-        Py_ssize_t slen = cs ? (Py_ssize_t)strlen(cs) : 0;
+        Py_ssize_t slen;
+        const char *cs = PyUnicode_AsUTF8AndSize(s, &slen);
         int ok = cs ? outbuf_append(ob, cs, slen) : 0;
         Py_DECREF(s);
         return ok;
     }
 
     if (PyUnicode_Check(value)) {
-        const char *s = PyUnicode_AsUTF8(value);
+        Py_ssize_t slen;
+        const char *s = PyUnicode_AsUTF8AndSize(value, &slen);
         if (!s) return 0;
-        Py_ssize_t slen = (Py_ssize_t)strlen(s);
         /* Multiline strings are handled by caller (blockquote mode).
          * Here we only handle single-line strings. */
         if (ser_needs_quote(s, slen))
@@ -188,10 +188,11 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
         PyObject *hexdig = PyObject_CallMethod(digest, "hexdigest", NULL);
         Py_DECREF(digest);
         if (!hexdig) return 0;
-        const char *hstr = PyUnicode_AsUTF8(hexdig);
+        Py_ssize_t hlen;
+        const char *hstr = PyUnicode_AsUTF8AndSize(hexdig, &hlen);
         if (!hstr) { Py_DECREF(hexdig); return 0; }
         int ok = outbuf_append(ob, "sha256:", 7);
-        if (ok) ok = outbuf_append(ob, hstr, (Py_ssize_t)strlen(hstr));
+        if (ok) ok = outbuf_append(ob, hstr, hlen);
         Py_DECREF(hexdig);
         return ok;
     }
@@ -199,8 +200,8 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
     /* Fallback: str(value) */
     PyObject *s = PyObject_Str(value);
     if (!s) return 0;
-    const char *cs = PyUnicode_AsUTF8(s);
-    Py_ssize_t cslen = cs ? (Py_ssize_t)strlen(cs) : 0;
+    Py_ssize_t cslen;
+    const char *cs = PyUnicode_AsUTF8AndSize(s, &cslen);
     int ok = cs ? outbuf_append(ob, cs, cslen) : 0;
     Py_DECREF(s);
     return ok;
@@ -217,11 +218,11 @@ int
 ser_write_array_scalar(OutBuf *ob, PyObject *value)
 {
     if (PyUnicode_Check(value)) {
-        const char *s = PyUnicode_AsUTF8(value);
+        Py_ssize_t len;
+        const char *s = PyUnicode_AsUTF8AndSize(value, &len);
         if (!s)
             return 0;
 
-        Py_ssize_t len = (Py_ssize_t)strlen(s);
         for (Py_ssize_t i = 0; i + 1 < len; i++) {
             if (s[i] == ':' && s[i + 1] == ' ')
                 return ser_write_quoted(ob, s, len);

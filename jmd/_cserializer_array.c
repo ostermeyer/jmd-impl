@@ -82,9 +82,9 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 if (PyDict_Check(ivalue) || PyList_Check(ivalue))
                     continue;
 
-                const char *ks = PyUnicode_AsUTF8(ikey);
+                Py_ssize_t klen;
+                const char *ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
                 if (!ks) return 0;
-                Py_ssize_t klen = (Py_ssize_t)strlen(ks);
 
                 if (first_scalar) {
                     if (!outbuf_append(ob, "\n- ", 3)) return 0;
@@ -111,9 +111,9 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 if (!PyDict_Check(ivalue) && !PyList_Check(ivalue))
                     continue;
 
-                const char *ks = PyUnicode_AsUTF8(ikey);
+                Py_ssize_t klen;
+                const char *ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
                 if (!ks) return 0;
-                Py_ssize_t klen = (Py_ssize_t)strlen(ks);
 
                 if (PyDict_Check(ivalue)) {
                     if (!outbuf_putc(ob, '\n')) return 0;
@@ -172,9 +172,9 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                     has_nested = 1;
                     continue;
                 }
-                const char *ks = PyUnicode_AsUTF8(ikey);
+                Py_ssize_t klen;
+                const char *ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
                 if (!ks) return 0;
-                Py_ssize_t klen = (Py_ssize_t)strlen(ks);
                 if (first_scalar) {
                     if (!outbuf_putc(ob, '\n')) return 0;
                     if (needs_qualifier) {
@@ -202,9 +202,9 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
             while (PyDict_Next(item, &ipos, &ikey, &ivalue)) {
                 if (!PyDict_Check(ivalue) && !PyList_Check(ivalue))
                     continue;
-                const char *ks = PyUnicode_AsUTF8(ikey);
+                Py_ssize_t klen;
+                const char *ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
                 if (!ks) return 0;
-                Py_ssize_t klen = (Py_ssize_t)strlen(ks);
                 if (PyDict_Check(ivalue)) {
                     if (!outbuf_putc(ob, '\n')) return 0;
                     if (!outbuf_putc(ob, '\n')) return 0;

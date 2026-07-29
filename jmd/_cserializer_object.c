@@ -22,9 +22,9 @@ ser_write_object_fields(OutBuf *ob, PyObject *dict, int depth)
     int needs_heading = 0;
 
     while (PyDict_Next(dict, &pos, &key, &value)) {
-        const char *kstr = PyUnicode_AsUTF8(key);
+        Py_ssize_t klen;
+        const char *kstr = PyUnicode_AsUTF8AndSize(key, &klen);
         if (!kstr) return 0;
-        Py_ssize_t klen = (Py_ssize_t)strlen(kstr);
 
         if (PyDict_Check(value)) {
             /* Nested object -> heading */
@@ -46,9 +46,9 @@ ser_write_object_fields(OutBuf *ob, PyObject *dict, int depth)
             needs_heading = 1;
         }
         else if (PyUnicode_Check(value)) {
-            const char *vs = PyUnicode_AsUTF8(value);
+            Py_ssize_t vlen;
+            const char *vs = PyUnicode_AsUTF8AndSize(value, &vlen);
             if (!vs) return 0;
-            Py_ssize_t vlen = (Py_ssize_t)strlen(vs);
             if (memchr(vs, '\n', (size_t)vlen)) {
                 /* Multiline -> blockquote */
                 if (!outbuf_putc(ob, '\n')) return 0;
