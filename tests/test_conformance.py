@@ -312,3 +312,130 @@ def test_must_fail(
         parser_surface.parse(jmd_text)
     assert exc.value.kind == expected["kind"]
     assert exc.value.line == expected["line"]
+
+
+# ---------------------------------------------------------------------------
+# Q3 — multiline values in array records (spec §§5.2, 8.3, and 9)
+# ---------------------------------------------------------------------------
+
+_Q3_ARRAY_MULTILINE_CASES = [
+    pytest.param(
+        "# Records[]\n"
+        "- note:\n"
+        "  > alpha\n"
+        "  > beta\n"
+        "  tail: after\n"
+        "- id: 2\n"
+        "  tail: later\n",
+        [
+            {"note": "alpha\nbeta", "tail": "after"},
+            {"id": 2, "tail": "later"},
+        ],
+        id="first-field-blockquote-root-array",
+    ),
+    pytest.param(
+        "# Records[]\n"
+        "- id: 1\n"
+        "  note:\n"
+        "  > alpha\n"
+        "  > beta\n"
+        "  tail: after\n"
+        "- id: 2\n",
+        [
+            {"id": 1, "note": "alpha\nbeta", "tail": "after"},
+            {"id": 2},
+        ],
+        id="continuation-blockquote-root-array",
+    ),
+    pytest.param(
+        "# Root\n"
+        "## records[]\n"
+        "- id: 1\n"
+        "  note: |\n"
+        "    alpha\n"
+        "    beta\n"
+        "  tail: after\n"
+        "- id: 2\n",
+        {
+            "records": [
+                {"id": 1, "note": "alpha\nbeta", "tail": "after"},
+                {"id": 2},
+            ]
+        },
+        id="literal-block-scalar-depth-two",
+    ),
+    pytest.param(
+        "# Root\n"
+        "## container\n"
+        "### records[]\n"
+        "- id: 1\n"
+        "  note: >\n"
+        "    alpha\n"
+        "    beta\n"
+        "  tail: after\n"
+        "- id: 2\n",
+        {
+            "container": {
+                "records": [
+                    {"id": 1, "note": "alpha beta", "tail": "after"},
+                    {"id": 2},
+                ]
+            }
+        },
+        id="folded-block-scalar-depth-three",
+    ),
+    pytest.param(
+        "# Records[]\n"
+        "- id: 1\n"
+        "## before\n"
+        "note:\n"
+        "> alpha\n"
+        "> beta\n"
+        "## after\n"
+        "value: end\n"
+        "#\n"
+        "- id: 2\n",
+        [
+            {
+                "id": 1,
+                "before": {"note": "alpha\nbeta"},
+                "after": {"value": "end"},
+            },
+            {"id": 2},
+        ],
+        id="nested-sections-around-blockquote",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("jmd_text", "expected"),
+    _Q3_ARRAY_MULTILINE_CASES,
+)
+def test_q3_array_record_multiline_parse(
+    parser_surface: ParserSurface,
+    jmd_text: str,
+    expected: object,
+) -> None:
+    """Preserve multiline fields, later fields, and later array records."""
+    assert parser_surface.parse(jmd_text).value == expected
+
+
+_Q3_ROUNDTRIP_ENVELOPE = jmd.Envelope(
+    mode="data",
+    label="Records",
+    frontmatter={},
+    value=[
+        {"id": 1, "note": "alpha\nbeta", "tail": "after"},
+        {"id": 2, "tail": "later"},
+    ],
+)
+
+
+def test_q3_array_record_multiline_roundtrip(
+    parser_surface: ParserSurface,
+    serializer_surface: SerializerSurface,
+) -> None:
+    """Round-trip multiline array records across every backend pairing."""
+    serialized = serializer_surface.serialize(_Q3_ROUNDTRIP_ENVELOPE)
+    assert parser_surface.parse(serialized) == _Q3_ROUNDTRIP_ENVELOPE

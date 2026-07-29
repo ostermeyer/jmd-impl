@@ -5,6 +5,8 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+import pytest
+
 import jmd
 from jmd import StreamEvent, jmd_stream
 from jmd._streaming import (
@@ -91,6 +93,41 @@ class TestArrayStreaming:
         types = event_types("# X\n## items[]\n- name: A\n  qty: 1")
         assert "ITEM_START" in types
         assert "FIELD" in types
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        ("opener", "content_indent", "expected"),
+        [
+            pytest.param(
+                "", "  > alpha\n  > beta", "alpha\nbeta", id="quote"
+            ),
+            pytest.param(
+                " |", "    alpha\n    beta", "alpha\nbeta", id="literal"
+            ),
+            pytest.param(
+                " >", "    alpha\n    beta", "alpha beta", id="folded"
+            ),
+        ],
+    )
+    def test_multiline_item_preserves_following_data(
+        opener: str,
+        content_indent: str,
+        expected: str,
+    ) -> None:
+        """Stream multiline item fields without losing later data."""
+        source = (
+            "# Records[]\n"
+            "- id: 1\n"
+            f"  note:{opener}\n"
+            f"{content_indent}\n"
+            "  tail: after\n"
+            "- id: 2\n"
+            "  tail: later\n"
+        )
+        fields = field_events(source)
+        assert ("note", expected) in fields
+        assert ("tail", "after") in fields
+        assert ("tail", "later") in fields
 
 
 class TestStreamingPartialDocs:
