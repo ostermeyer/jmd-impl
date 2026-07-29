@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD QBE — Query by Example (v0.3.3)."""
+"""JMD QBE — Query by Example (v0.3.5)."""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def _parse_condition(raw: str) -> Condition:
 
 
 class JMDQueryParser:
-    """Parses JMD QBE query documents (#?) — v0.3.3 heading-scope model.
+    """Parses JMD QBE query documents (#?) — v0.3.5 heading-scope model.
 
     Implements the JMD Query-by-Example (QBE) syntax.
     """

@@ -1,6 +1,6 @@
 # jmd-format — Python Reference Implementation
 
-Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.3.3). Includes a C-accelerated parser and serializer, plus lossless XML↔JMD conversion.
+Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.3.5). Includes a C-accelerated parser and serializer, plus lossless XML↔JMD conversion.
 
 ## Installation
 

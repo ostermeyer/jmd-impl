@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Delete Documents (#- Label) — v0.3.3."""
+"""JMD Delete Documents (#- Label) — v0.3.5."""
 
 from __future__ import annotations
 

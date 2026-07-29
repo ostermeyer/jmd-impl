@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD Streaming Parser (v0.3.3)."""
+"""JMD Streaming Parser (v0.3.5)."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ class StreamEvent:
 
 
 def jmd_stream(source: str) -> Generator[StreamEvent, None, None]:
-    """Generate StreamEvents from a JMD v0.3.3 source string.
+    """Generate StreamEvents from a JMD v0.3.5 source string.
 
     Processes the document line by line using a scope stack driven by
     heading depth. Supports blockquote multiline strings and indentation
