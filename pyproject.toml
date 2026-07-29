@@ -66,6 +66,10 @@ select = [
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.per-file-ignores]
+# Test functions don't need docstrings; everything else stays strict.
+"tests/*" = ["D"]
+
 [tool.mypy]
 strict = true
 
@@ -78,6 +82,15 @@ strict = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disable_error_code = ["untyped-decorator"]
+
+# lxml-stubs may not be installed on every developer's machine (they are a
+# dev-only dep and CI may omit them). When absent, mypy treats lxml as
+# untyped, which makes all the type: ignore[arg-type] comments in xml.py
+# appear "unused". Silencing the import-untyped error keeps the gate green
+# on every platform without removing the legitimate arg-type suppressions.
+[[tool.mypy.overrides]]
+module = "lxml.*"
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

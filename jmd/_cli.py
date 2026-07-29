@@ -19,6 +19,7 @@ from ._streaming import jmd_stream
 # Public API — top-level convenience functions
 # ---------------------------------------------------------------------------
 
+
 def jmd_to_json(jmd_source: str, indent: int = 2) -> str:
     """Parse JMD source and return a formatted JSON string.
 
@@ -73,6 +74,7 @@ def jmd_schema_to_json_schema(schema_source: str) -> str:
 def json_schema_to_jmd_schema(json_schema_source: str) -> str:
     """Convert a JSON Schema string to a JMD Schema document."""
     from ._schema import json_schema_to_jmd_schema as _convert
+
     return _convert(json_schema_source)
 
 
@@ -165,46 +167,66 @@ lng: number
 
 SAMPLE_RECORDS: list[dict[str, Any]] = [
     {
-        "id": 1, "status": "pending", "total": 84.99,
+        "id": 1,
+        "status": "pending",
+        "total": 84.99,
         "tags": ["express", "fragile"],
         "items": [
             {"sku": "A1", "qty": 2, "price": 29.99},
             {"sku": "B3", "qty": 1, "price": 8.00},
         ],
         "address": {
-            "city": "Berlin", "street": "Hauptstr. 1", "zip": "10115",
+            "city": "Berlin",
+            "street": "Hauptstr. 1",
+            "zip": "10115",
         },
     },
     {
-        "id": 2, "status": "shipped", "total": 120.00,
+        "id": 2,
+        "status": "shipped",
+        "total": 120.00,
         "tags": ["express"],
         "items": [{"sku": "C2", "qty": 1, "price": 120.00}],
         "address": {
-            "city": "Hamburg", "street": "Allee 5", "zip": "20095",
+            "city": "Hamburg",
+            "street": "Allee 5",
+            "zip": "20095",
         },
     },
     {
-        "id": 3, "status": "processing", "total": 35.00,
+        "id": 3,
+        "status": "processing",
+        "total": 35.00,
         "tags": ["express"],
         "items": [{"sku": "D4", "qty": 3, "price": 11.66}],
         "address": {
-            "city": "München", "street": "Marienplatz 1", "zip": "80331",
+            "city": "München",
+            "street": "Marienplatz 1",
+            "zip": "80331",
         },
     },
     {
-        "id": 4, "status": "pending", "total": 200.00,
+        "id": 4,
+        "status": "pending",
+        "total": 200.00,
         "tags": ["standard"],
         "items": [{"sku": "E5", "qty": 1, "price": 200.00}],
         "address": {
-            "city": "Berlin", "street": "Unter den Linden 1", "zip": "10117",
+            "city": "Berlin",
+            "street": "Unter den Linden 1",
+            "zip": "10117",
         },
     },
     {
-        "id": 5, "status": "pending", "total": 67.50,
+        "id": 5,
+        "status": "pending",
+        "total": 67.50,
         "tags": ["express"],
         "items": [{"sku": "F6", "qty": 2, "price": 33.75}],
         "address": {
-            "city": "Köln", "street": "Dom 1", "zip": "50667",
+            "city": "Köln",
+            "street": "Dom 1",
+            "zip": "50667",
         },
     },
 ]
@@ -213,6 +235,7 @@ SAMPLE_RECORDS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 # CLI commands
 # ---------------------------------------------------------------------------
+
 
 def _read_file(path: str) -> str:
     with open(path, encoding="utf-8") as fh:
@@ -260,8 +283,11 @@ def _cmd_roundtrip(source: str) -> None:
     else:
         print("Roundtrip FAILED")
         diff = difflib.unified_diff(
-            j1.splitlines(), j2.splitlines(),
-            lineterm="", fromfile="pass-1", tofile="pass-2",
+            j1.splitlines(),
+            j2.splitlines(),
+            lineterm="",
+            fromfile="pass-1",
+            tofile="pass-2",
         )
         print("\n".join(diff))
         sys.exit(1)
@@ -348,9 +374,7 @@ def main() -> None:
 
     cmd = args[0]
     file_path = (
-        args[1]
-        if len(args) > 1 and not args[1].startswith("-")
-        else None
+        args[1] if len(args) > 1 and not args[1].startswith("-") else None
     )
     out = _flag(args, "-o")
 

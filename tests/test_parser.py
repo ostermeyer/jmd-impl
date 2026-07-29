@@ -18,6 +18,7 @@ def parse(source: str) -> Any:
 # Scalar types (spec § 5)
 # ---------------------------------------------------------------------------
 
+
 class TestScalars:
     """Tests for scalar value parsing."""
 
@@ -82,6 +83,7 @@ class TestScalars:
 # Keys (spec § 4)
 # ---------------------------------------------------------------------------
 
+
 class TestKeys:
     """Tests for key syntax variants."""
 
@@ -105,6 +107,7 @@ class TestKeys:
 # ---------------------------------------------------------------------------
 # Nested objects (spec § 7)
 # ---------------------------------------------------------------------------
+
 
 class TestNesting:
     """Tests for nested object parsing via heading levels."""
@@ -141,6 +144,7 @@ class TestNesting:
 # ---------------------------------------------------------------------------
 # Arrays (spec § 8)
 # ---------------------------------------------------------------------------
+
 
 class TestArrays:
     """Tests for array parsing."""
@@ -194,6 +198,7 @@ class TestArrays:
 # Blockquote multiline strings (spec § 9)
 # ---------------------------------------------------------------------------
 
+
 class TestBlockquotes:
     """Tests for blockquote multiline string parsing."""
 
@@ -216,6 +221,7 @@ class TestBlockquotes:
 # ---------------------------------------------------------------------------
 # Frontmatter (spec § 3.5)
 # ---------------------------------------------------------------------------
+
 
 class TestFrontmatter:
     """Tests for frontmatter parsing."""
@@ -244,6 +250,7 @@ class TestFrontmatter:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""

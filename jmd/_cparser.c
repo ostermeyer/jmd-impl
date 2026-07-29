@@ -20,9 +20,15 @@ jmd_parse(PyObject *self, PyObject *args)
     (void)self;
     const char *source;
     Py_ssize_t source_len;
+    int line_offset = 0;
 
-    if (!PyArg_ParseTuple(args, "s#", &source, &source_len))
+    if (!PyArg_ParseTuple(
+            args, "s#|i", &source, &source_len, &line_offset))
         return NULL;
+    if (line_offset < 0) {
+        PyErr_SetString(PyExc_ValueError, "line_offset must be non-negative");
+        return NULL;
+    }
 
     LineArray lines;
     if (!linearray_init(&lines)) {
@@ -30,7 +36,7 @@ jmd_parse(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!tokenize(source, source_len, &lines)) {
+    if (!tokenize(source, source_len, line_offset, &lines)) {
         linearray_free(&lines);
         return NULL;
     }
@@ -99,7 +105,7 @@ jmd_parse(PyObject *self, PyObject *args)
 
 static PyMethodDef cparser_methods[] = {
     {"parse", jmd_parse, METH_VARARGS,
-     "Parse a JMD document string into a Python dict or list."},
+     "Parse JMD body text, adding an optional source-line offset."},
     {NULL, NULL, 0, NULL}
 };
 

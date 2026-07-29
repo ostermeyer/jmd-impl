@@ -14,6 +14,12 @@ _json_loads = json.loads
 # Section 5a: structural prefixes that must never appear unquoted in a value.
 _STRUCTURAL_PREFIXES = ("# ", "- ")
 
+# §6.2: in array *item* position (after ``- ``) a bare string shaped like
+# ``key: value`` — a bare or JSON-quoted key immediately followed by ``: `` —
+# is reparsed as an object item, not a scalar. Such items must be quoted.
+# Mirrors ``_KV_RE`` in :mod:`jmd._parser`.
+_ITEM_KV_RE = re.compile(r'^(?:[a-zA-Z0-9_\-]+|"(?:[^"\\]|\\.)*"): ')
+
 
 def parse_scalar(raw: str) -> Any:
     """Parse a raw scalar string into a Python value.
@@ -31,35 +37,35 @@ def parse_scalar(raw: str) -> Any:
         ValueError: If the value contains an unquoted structural prefix.
     """
     # Fast path: check first character to quickly dispatch
-    c0 = raw[0] if raw else '\0'
+    c0 = raw[0] if raw else "\0"
 
     if c0 == '"':
         if raw[-1] == '"' and len(raw) >= 2:
             return _json_loads(raw)
         return raw
 
-    if c0 == 'n' and raw == "null":
+    if c0 == "n" and raw == "null":
         return None
-    if c0 == 't' and raw == "true":
+    if c0 == "t" and raw == "true":
         return True
-    if c0 == 'f' and raw == "false":
+    if c0 == "f" and raw == "false":
         return False
 
     # Number detection: starts with digit or '-' followed by digit
-    if c0.isdigit() or (c0 == '-' and len(raw) > 1 and raw[1].isdigit()):
+    if c0.isdigit() or (c0 == "-" and len(raw) > 1 and raw[1].isdigit()):
         try:
-            if '.' in raw or 'e' in raw or 'E' in raw:
+            if "." in raw or "e" in raw or "E" in raw:
                 return float(raw)
             return int(raw)
         except ValueError:
             pass
-    elif c0 == '-':
+    elif c0 == "-":
         if len(raw) == 1:
             raise ValueError(
                 "Bare '-' as value is ambiguous. Quote the value: \"-\""
             )
 
-    if c0 == '#' or (c0 == '-' and len(raw) > 1 and raw[1] == ' '):
+    if c0 == "#" or (c0 == "-" and len(raw) > 1 and raw[1] == " "):
         for prefix in _STRUCTURAL_PREFIXES:
             if raw.startswith(prefix):
                 raise ValueError(
@@ -116,15 +122,19 @@ def split_kv(content: str) -> tuple[str, str] | None:
                 continue
             if ch == '"':
                 # Closing quote at index i. Look for "[]: " or ": ".
-                if (i + 4 < n
-                        and content[i + 1] == "["
-                        and content[i + 2] == "]"
-                        and content[i + 3] == ":"
-                        and content[i + 4] == " "):
+                if (
+                    i + 4 < n
+                    and content[i + 1] == "["
+                    and content[i + 2] == "]"
+                    and content[i + 3] == ":"
+                    and content[i + 4] == " "
+                ):
                     return content[: i + 3], content[i + 5 :]
-                if (i + 2 < n
-                        and content[i + 1] == ":"
-                        and content[i + 2] == " "):
+                if (
+                    i + 2 < n
+                    and content[i + 1] == ":"
+                    and content[i + 2] == " "
+                ):
                     return content[: i + 1], content[i + 3 :]
                 return None
             i += 1
@@ -188,6 +198,33 @@ def serialize_scalar(value: Any) -> str:
     if _needs_quote(s) or s.startswith('"') or "\n" in s or "\t" in s:
         return json.dumps(s, ensure_ascii=False)
     return s
+
+
+def serialize_scalar_item(value: Any) -> str:
+    """Serialize a scalar for array *item* position (§6.1/§6.2).
+
+    Identical to :func:`serialize_scalar` for non-string values. For
+    strings it adds the quoting triggers that item position needs but
+    field position does not: a ``key: value`` shape (else reparsed as an
+    object item, §6.2) and significant leading/trailing whitespace
+    (§11.2). The structural, type-ambiguous, quote and control-character
+    triggers are shared with :func:`serialize_scalar` via
+    :func:`_needs_quote`.
+    """
+    if isinstance(value, str):
+        s = value
+        if (
+            _needs_quote(s)
+            or s.startswith('"')
+            or "\n" in s
+            or "\t" in s
+            or s[:1].isspace()
+            or s[-1:].isspace()
+            or _ITEM_KV_RE.match(s)
+        ):
+            return json.dumps(s, ensure_ascii=False)
+        return s
+    return serialize_scalar(value)
 
 
 def quote_key(key: str) -> str:

@@ -45,10 +45,12 @@ _HTML_STYLE = """\
 
 def _esc(s: str) -> str:
     """Escape a string for safe HTML embedding."""
-    return (s.replace("&", "&amp;")
-             .replace("<", "&lt;")
-             .replace(">", "&gt;")
-             .replace('"', "&quot;"))
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 def _scalar_html(raw: str) -> str:
@@ -95,12 +97,12 @@ class JMDHTMLRenderer:
             body = self._render_object(data)
 
         return (
-            f"<!DOCTYPE html>\n<html lang=\"en\">\n<head>"
-            f"<meta charset=\"UTF-8\">"
+            f'<!DOCTYPE html>\n<html lang="en">\n<head>'
+            f'<meta charset="UTF-8">'
             f"<title>JMD – {_esc(label)}</title>\n"
-            f"{_HTML_STYLE}\n</head>\n<body>\n<div class=\"jmd-doc\">\n"
-            f"<div class=\"jmd-root-label\">{_esc(label)}</div>\n"
-            f"<div class=\"jmd-object\">\n{body}\n</div>\n"
+            f'{_HTML_STYLE}\n</head>\n<body>\n<div class="jmd-doc">\n'
+            f'<div class="jmd-root-label">{_esc(label)}</div>\n'
+            f'<div class="jmd-object">\n{body}\n</div>\n'
             f"</div>\n</body>\n</html>"
         )
 
@@ -132,12 +134,10 @@ class JMDHTMLRenderer:
                 parts.append(f'<div class="jmd-array-obj">{inner}</div>')
             elif isinstance(item, list):
                 inner = self._render_array(item)
-                parts.append(
-                    f'<div class="jmd-array-nested">{inner}</div>'
-                )
+                parts.append(f'<div class="jmd-array-nested">{inner}</div>')
             else:
                 parts.append(
                     f'<div class="jmd-array-scalar">'
-                    f'{_scalar_html(serialize_scalar(item))}</div>'
+                    f"{_scalar_html(serialize_scalar(item))}</div>"
                 )
         return "\n".join(parts)

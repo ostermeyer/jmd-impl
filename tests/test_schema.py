@@ -231,10 +231,11 @@ class TestJsonSchemaExport:
         """Test that enum values are exported as the enum key in JSON Schema."""
         s = parse_schema("#! X\nstatus: pending|active|shipped")
         js = s.to_json_schema()
-        assert (
-            js["properties"]["status"]["enum"]
-            == ["pending", "active", "shipped"]
-        )
+        assert js["properties"]["status"]["enum"] == [
+            "pending",
+            "active",
+            "shipped",
+        ]
 
     def test_json_schema_array_ref(self) -> None:
         """Test that a []-> reference is exported as an array of $ref items."""

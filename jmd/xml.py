@@ -23,8 +23,7 @@ try:
     from lxml import etree
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
-        "jmd.xml requires lxml. Install with: "
-        'pip install "jmd-format[xml]"'
+        'jmd.xml requires lxml. Install with: pip install "jmd-format[xml]"'
     ) from exc
 
 from jmd._scalars import parse_scalar, quote_key, serialize_scalar
@@ -69,7 +68,7 @@ def xml_to_jmd(
         source = source.encode()
     root = etree.fromstring(source)
     lines: list[str] = []
-    _element_to_jmd(root, 1, lines, {}, max_depth)
+    element_to_jmd(root, 1, lines, {}, max_depth)
     # Remove any leading blank line artifact and ensure single trailing newline
     text = "\n".join(lines)
     return text.strip("\n") + "\n"
@@ -86,7 +85,11 @@ def jmd_to_xml(source: str) -> bytes:
     """
     node = _parse_jmd_nodes(source)
     root = _node_to_element(node, None, {})
-    return etree.tostring(root, encoding="unicode").encode()
+    # encoding="unicode" makes tostring return str; annotate so the value is
+    # str whether or not lxml-stubs are installed (Any -> str on assignment),
+    # avoiding both a no-any-return without stubs and a redundant cast with.
+    xml_text: str = etree.tostring(root, encoding="unicode")
+    return xml_text.encode()
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +162,7 @@ def _new_ns_decls(
     return result
 
 
-def _element_to_jmd(
+def element_to_jmd(
     element: etree._Element,
     depth: int,
     lines: list[str],
@@ -186,7 +189,7 @@ def _element_to_jmd(
     # lxml-stubs type attrib items as str | bytes; in practice they are
     # always str for XML parsed from text/bytes sources we accept here.
     attrs = [
-        (_clark_to_qname(k, element.nsmap), v)  # type: ignore[arg-type]
+        (_clark_to_qname(k, element.nsmap), v)  # type: ignore[arg-type, unused-ignore]
         for k, v in element.attrib.items()
     ]
 
@@ -213,7 +216,7 @@ def _element_to_jmd(
     for key, val in attrs:
         key_str = '"_"' if key == "_" else quote_key(key)
         # val is str in practice (see attrs comprehension above).
-        lines.append(f"{key_str}: {_serialize_xml_str(val)}")  # type: ignore[arg-type]
+        lines.append(f"{key_str}: {_serialize_xml_str(val)}")  # type: ignore[arg-type, unused-ignore]
 
     # Text content alongside attributes or when children follow
     if text and not has_children:
@@ -223,7 +226,7 @@ def _element_to_jmd(
     if max_depth is None or depth < max_depth:
         for child in element:
             lines.append("")
-            _element_to_jmd(child, depth + 1, lines, element.nsmap, max_depth)
+            element_to_jmd(child, depth + 1, lines, element.nsmap, max_depth)
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +279,7 @@ def _parse_field_line(content: str) -> tuple[str, str]:
         return m.group(1), m.group(2)
     sep = content.find(": ")
     if sep >= 0:
-        return content[:sep], content[sep + 2:]
+        return content[:sep], content[sep + 2 :]
     if content.endswith(":"):
         return content[:-1], ""
     return content, ""
@@ -336,9 +339,7 @@ def _parse_jmd_nodes(source: str) -> _XMLNode:
         root_node.fields.append(("_", root_text))
 
     # Stack of (depth, node) — drives the nesting structure
-    stack: list[tuple[int, _XMLNode]] = [
-        (root_line.heading_depth, root_node)
-    ]
+    stack: list[tuple[int, _XMLNode]] = [(root_line.heading_depth, root_node)]
 
     while pos < n:
         line = lines[pos]
@@ -349,10 +350,7 @@ def _parse_jmd_nodes(source: str) -> _XMLNode:
 
         if line.heading_depth > 0:  # heading → child element
             # Pop until the parent is at a strictly shallower depth
-            while (
-                len(stack) > 1
-                and stack[-1][0] >= line.heading_depth
-            ):
+            while len(stack) > 1 and stack[-1][0] >= line.heading_depth:
                 stack.pop()
             parent_node = stack[-1][1]
             qname, text = _parse_heading_content(line.content)
@@ -431,16 +429,15 @@ def _node_to_element(
     # These must be declared on the element so that lxml can resolve the
     # prefix when serializing — otherwise lxml invents ns0/ns1/... prefixes.
     new_ns = {
-        k: v for k, v in local_nsmap.items()
-        if inherited_nsmap.get(k) != v
+        k: v for k, v in local_nsmap.items() if inherited_nsmap.get(k) != v
     }
 
     if parent is None:
         # lxml accepts a None key in nsmap for the default namespace;
         # lxml-stubs declare Mapping[str, str], which excludes that case.
-        element = etree.Element(clark, nsmap=local_nsmap)  # type: ignore[arg-type]
+        element = etree.Element(clark, nsmap=local_nsmap)  # type: ignore[arg-type, unused-ignore]
     else:
-        element = etree.SubElement(parent, clark, nsmap=new_ns or None)  # type: ignore[arg-type]
+        element = etree.SubElement(parent, clark, nsmap=new_ns or None)  # type: ignore[arg-type, unused-ignore]
 
     # Add attributes and text content from fields.
     # Bare "_" → XML text content.

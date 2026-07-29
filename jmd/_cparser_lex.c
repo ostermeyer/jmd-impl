@@ -95,10 +95,14 @@ detect_heading(const char *text, Py_ssize_t text_len,
 }
 
 int
-tokenize(const char *source, Py_ssize_t source_len, LineArray *lines)
+tokenize(
+    const char *source,
+    Py_ssize_t source_len,
+    int line_offset,
+    LineArray *lines)
 {
     Py_ssize_t pos = 0;
-    int lineno = 0;
+    int lineno = line_offset;
 
     while (pos <= source_len) {
         lineno++;

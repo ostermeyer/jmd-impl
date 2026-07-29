@@ -68,7 +68,11 @@ PyObject *intern_key(const char *raw, Py_ssize_t len);
 /* Lexing and scalar conversion. */
 int linearray_init(LineArray *lines);
 void linearray_free(LineArray *lines);
-int tokenize(const char *source, Py_ssize_t source_len, LineArray *lines);
+int tokenize(
+    const char *source,
+    Py_ssize_t source_len,
+    int line_offset,
+    LineArray *lines);
 PyObject *parse_scalar(const char *text, Py_ssize_t len);
 PyObject *parse_key(const char *text, Py_ssize_t len);
 Py_ssize_t find_kv_split(const char *text, Py_ssize_t len);

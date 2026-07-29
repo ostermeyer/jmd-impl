@@ -6,10 +6,10 @@ from typing import Any
 from jmd import JMDQueryExecutor, JMDQueryParser
 
 RECORDS = [
-    {"id": 1, "status": "active",   "score": 90, "tag": "vip"},
+    {"id": 1, "status": "active", "score": 90, "tag": "vip"},
     {"id": 2, "status": "inactive", "score": 45, "tag": "standard"},
-    {"id": 3, "status": "active",   "score": 72, "tag": "vip"},
-    {"id": 4, "status": "pending",  "score": 60, "tag": "standard"},
+    {"id": 3, "status": "active", "score": 72, "tag": "vip"},
+    {"id": 4, "status": "pending", "score": 60, "tag": "standard"},
 ]
 
 
@@ -160,9 +160,7 @@ class TestQueryExecution:
     def test_combined_conditions(self) -> None:
         """Test that multiple conditions are combined with AND logic."""
         results = query("#? X\nstatus: active\nscore: >80")
-        assert all(
-            r["status"] == "active" and r["score"] > 80 for r in results
-        )
+        assert all(r["status"] == "active" and r["score"] > 80 for r in results)
 
     def test_projection_selects_fields(self) -> None:
         """Test that projection fields limit the keys in each result record."""
@@ -189,7 +187,10 @@ class TestQueryExecution:
     def test_regex_filter(self) -> None:
         """Test that an explicit ``~re:`` condition filters by pattern match."""
         records = [
-            {"sku": "A001"}, {"sku": "B002"}, {"sku": "A123"}, {"sku": "C999"},
+            {"sku": "A001"},
+            {"sku": "B002"},
+            {"sku": "A123"},
+            {"sku": "C999"},
         ]
         results = query("#? X\nsku: ~re:^A\\d+", records)
         assert all(r["sku"].startswith("A") for r in results)
@@ -198,7 +199,9 @@ class TestQueryExecution:
     def test_regex_case_sensitive(self) -> None:
         """Test that regex matching is case-sensitive by default."""
         records = [
-            {"name": "ACME Corp"}, {"name": "acme corp"}, {"name": "Beta Ltd"}
+            {"name": "ACME Corp"},
+            {"name": "acme corp"},
+            {"name": "Beta Ltd"},
         ]
         results = query("#? X\nname: ~re:.*Corp.*", records)
         assert len(results) == 1
@@ -207,7 +210,9 @@ class TestQueryExecution:
     def test_negation_regex_filter(self) -> None:
         """Test that ``!~re:pattern`` excludes pattern-matching records."""
         records = [
-            {"sku": "LEGACY_001"}, {"sku": "A001"}, {"sku": "LEGACY_002"}
+            {"sku": "LEGACY_001"},
+            {"sku": "A001"},
+            {"sku": "LEGACY_002"},
         ]
         results = query("#? X\nsku: !~re:^LEGACY.*", records)
         assert len(results) == 1

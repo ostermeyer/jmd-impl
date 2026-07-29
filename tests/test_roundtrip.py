@@ -19,7 +19,11 @@ class TestRoundtrip:
     def test_flat_object(self) -> None:
         """Test that a flat dict with mixed types survives a roundtrip."""
         data = {
-            "id": 1, "name": "Test", "active": True, "score": 9.5, "note": None
+            "id": 1,
+            "name": "Test",
+            "active": True,
+            "score": 9.5,
+            "note": None,
         }
         assert roundtrip(data) == data
 

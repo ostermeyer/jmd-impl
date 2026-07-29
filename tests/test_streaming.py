@@ -164,9 +164,7 @@ class TestStreamingPartialDocs:
 
     def test_first_field_arrives_early(self) -> None:
         """FIELD event for first key arrives before rest of document."""
-        evs = events(
-            "# Order\nid: 1\nstatus: pending\n## customer\nname: Anna"
-        )
+        evs = events("# Order\nid: 1\nstatus: pending\n## customer\nname: Anna")
         first_field = next(e for e in evs if e.type == "FIELD")
         assert first_field.key == "id"
 
@@ -460,6 +458,7 @@ class TestAsyncStreamingAPI:
 
     def test_to_lines_splits_chunks(self) -> None:
         """Test that to_lines splits an async iterable of arbitrary chunks."""
+
         async def chunks() -> AsyncIterator[str]:
             yield "# As"
             yield "ync\nid: "
@@ -472,6 +471,7 @@ class TestAsyncStreamingAPI:
 
     def test_to_lines_yields_trailing_unterminated(self) -> None:
         """Test that to_lines emits the final unterminated line."""
+
         async def chunks() -> AsyncIterator[str]:
             yield "a\nb"
 
@@ -482,6 +482,7 @@ class TestAsyncStreamingAPI:
 
     def test_to_lines_strips_carriage_return(self) -> None:
         r"""Test that to_lines strips trailing \r from lines."""
+
         async def chunks() -> AsyncIterator[str]:
             yield "a\r\nb\r\n"
 
@@ -492,6 +493,7 @@ class TestAsyncStreamingAPI:
 
     def test_async_events_pipeline(self) -> None:
         """Test that async events() reads from an async line source."""
+
         async def lines() -> AsyncIterator[str]:
             for ln in ["# Doc", "id: 7"]:
                 yield ln
@@ -514,6 +516,7 @@ class TestAsyncStreamingAPI:
 
     def test_async_pipeline_end_to_end(self) -> None:
         """Test to_lines + async events composed over byte chunks."""
+
         async def chunks() -> AsyncIterator[bytes]:
             yield b"# Doc\nid: "
             yield b"42\n"

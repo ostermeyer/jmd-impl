@@ -58,7 +58,9 @@ class TestPropertiesRepeatedHeadings:
 
     @hypothesis.given(
         obj_contents=st.lists(
-            jmd_object_contents(), min_size=2, max_size=20,
+            jmd_object_contents(),
+            min_size=2,
+            max_size=20,
         ),
         label=st.text(alphabet=_UPPER, min_size=1, max_size=5),
     )
@@ -125,9 +127,7 @@ class TestPropertiesRepeatedHeadings:
     @hypothesis.given(
         label=st.text(alphabet=_UPPER, min_size=1, max_size=5),
     )
-    def test_property_repeated_explicit_array(
-        self, label: str
-    ) -> None:
+    def test_property_repeated_explicit_array(self, label: str) -> None:
         """Two explicit arrays yield repeated_explicit_array."""
         src = f"# Root\n## {label}[]\n- x: 1\n## {label}[]\n- x: 2\n"
 

@@ -108,25 +108,22 @@ class TestEnvelopeShape:
 
 
 _ROUNDTRIP_CASES = [
-    ("data, no frontmatter",
-     "# Order\nid: 42\nstatus: pending"),
-    ("data, root array",
-     "# Orders[]\n- id: 1\n- id: 2"),
-    ("data, anonymous root array",
-     "# []\n- a\n- b"),
-    ("data, with frontmatter",
-     "confidence: high\nsource: db\n\n# Customer\nname: Müller"),
-    ("schema, plain",
-     "#! Order\nid: integer\nstatus: string"),
-    ("query, with operator value",
-     "#? Order\nstatus: pending\ntotal: > 50"),
-    ("delete, single id",
-     "#- Order\nid: 42"),
-    ("delete, bulk anonymous",
-     "#- []\n- 42\n- 43"),
-    ("data, with pagination response frontmatter",
-     "total: 142\npage: 2\npages: 8\n\n# Orders\n\n## data[]\n"
-     "- id: 1\n  status: pending"),
+    ("data, no frontmatter", "# Order\nid: 42\nstatus: pending"),
+    ("data, root array", "# Orders[]\n- id: 1\n- id: 2"),
+    ("data, anonymous root array", "# []\n- a\n- b"),
+    (
+        "data, with frontmatter",
+        "confidence: high\nsource: db\n\n# Customer\nname: Müller",
+    ),
+    ("schema, plain", "#! Order\nid: integer\nstatus: string"),
+    ("query, with operator value", "#? Order\nstatus: pending\ntotal: > 50"),
+    ("delete, single id", "#- Order\nid: 42"),
+    ("delete, bulk anonymous", "#- []\n- 42\n- 43"),
+    (
+        "data, with pagination response frontmatter",
+        "total: 142\npage: 2\npages: 8\n\n# Orders\n\n## data[]\n"
+        "- id: 1\n  status: pending",
+    ),
 ]
 
 

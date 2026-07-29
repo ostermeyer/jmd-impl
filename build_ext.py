@@ -5,6 +5,7 @@ Sister script to ``setup.py``: invoked directly for in-place development
 builds (``python build_ext.py build_ext --inplace``). Surfaces compile
 errors instead of swallowing them.
 """
+
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 

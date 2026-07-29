@@ -30,7 +30,7 @@ SAMPLES: list[tuple[str, str]] = [
     (
         "Minimal paragraph",
         (
-            '<w:document'
+            "<w:document"
             ' xmlns:w="http://schemas.openxmlformats.org/'
             'wordprocessingml/2006/main">'
             "<w:body>"
@@ -44,7 +44,7 @@ SAMPLES: list[tuple[str, str]] = [
     (
         "Companion spec example",
         (
-            '<w:document'
+            "<w:document"
             ' xmlns:w="http://schemas.openxmlformats.org/'
             'wordprocessingml/2006/main"'
             ' xmlns:r="http://schemas.openxmlformats.org/'
@@ -75,7 +75,7 @@ SAMPLES: list[tuple[str, str]] = [
     (
         "Table with rows",
         (
-            '<w:document'
+            "<w:document"
             ' xmlns:w="http://schemas.openxmlformats.org/'
             'wordprocessingml/2006/main">'
             "<w:body>"
@@ -101,7 +101,7 @@ SAMPLES: list[tuple[str, str]] = [
     (
         "DrawingML chart series",
         (
-            '<c:chartSpace'
+            "<c:chartSpace"
             ' xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
             ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
             "<c:chart>"
@@ -118,7 +118,7 @@ SAMPLES: list[tuple[str, str]] = [
             "<c:numRef>"
             "<c:f>Sheet1!$B$2:$B$4</c:f>"
             "<c:numCache>"
-            '<c:formatCode>General</c:formatCode>'
+            "<c:formatCode>General</c:formatCode>"
             '<c:ptCount val="3"/>'
             '<c:pt idx="0"><c:v>10</c:v></c:pt>'
             '<c:pt idx="1"><c:v>20</c:v></c:pt>'
@@ -246,10 +246,14 @@ def run_benchmark() -> None:
     savings_vs_json = (1 - jmd_total / json_total) * 100
 
     print(f"  JMD vs XML pretty   : -{savings_vs_pretty:5.1f}% tokens")
-    print(f"  JMD vs XML minified : {'-' if savings_vs_mini >= 0 else '+'}"
-          f"{abs(savings_vs_mini):4.1f}% tokens")
-    print(f"  JMD vs JSON Parker  : {'-' if savings_vs_json >= 0 else '+'}"
-          f"{abs(savings_vs_json):4.1f}% tokens")
+    print(
+        f"  JMD vs XML minified : {'-' if savings_vs_mini >= 0 else '+'}"
+        f"{abs(savings_vs_mini):4.1f}% tokens"
+    )
+    print(
+        f"  JMD vs JSON Parker  : {'-' if savings_vs_json >= 0 else '+'}"
+        f"{abs(savings_vs_json):4.1f}% tokens"
+    )
 
     # Energy implication at 1B requests/day
     requests_per_day = 1_000_000_000

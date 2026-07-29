@@ -22,7 +22,7 @@ _REGEX_PREFIX = "~re:"
 class Condition:
     """A single parsed field condition from a QBE query."""
 
-    op: str       # '=', '!=', '>', '>=', '<', '<=', '~', '?', '?:', '|'
+    op: str  # '=', '!=', '>', '>=', '<', '<=', '~', '?', '?:', '|'
     values: list[Any]
 
     def __repr__(self) -> str:
@@ -36,7 +36,7 @@ class Condition:
             return f"~/{self.values[0]}/"
         if len(self.values) == 1:
             return f"{self.op}{self.values[0]!r}"
-        return f'{self.op}({"|".join(repr(v) for v in self.values)})'
+        return f"{self.op}({'|'.join(repr(v) for v in self.values)})"
 
 
 @dataclass
@@ -92,7 +92,7 @@ def _parse_condition(raw: str) -> Condition:
 
     for op in (">=", "<=", ">", "<"):
         if raw.startswith(op):
-            rest = raw[len(op):].strip()
+            rest = raw[len(op) :].strip()
             return Condition(op=op, values=[parse_scalar(rest)])
 
     # Explicit regex (§A.1.8): ``~re:pattern`` — content autodetection
@@ -100,7 +100,7 @@ def _parse_condition(raw: str) -> Condition:
     # would silently match any character.  Order matters: this check
     # MUST precede the bare ``~`` contains branch below.
     if raw.startswith(_REGEX_PREFIX):
-        return Condition(op="regex", values=[raw[len(_REGEX_PREFIX):].strip()])
+        return Condition(op="regex", values=[raw[len(_REGEX_PREFIX) :].strip()])
 
     # Contains (~) — case-insensitive substring match
     if raw.startswith("~"):
@@ -190,15 +190,15 @@ class JMDQueryParser:
                 if content.endswith("[]"):
                     key = parse_key(content[:-2])
                     item_fields = self._parse_query_array_items(depth + 1)
-                    fields.append(
-                        QueryArray(key=key, item_fields=item_fields)
-                    )
+                    fields.append(QueryArray(key=key, item_fields=item_fields))
                 elif ": " in content:
                     key_part, _, cond_part = content.partition(": ")
-                    fields.append(QueryField(
-                        key=parse_key(key_part),
-                        condition=_parse_condition(cond_part),
-                    ))
+                    fields.append(
+                        QueryField(
+                            key=parse_key(key_part),
+                            condition=_parse_condition(cond_part),
+                        )
+                    )
                 else:
                     key = parse_key(content)
                     sub = self._parse_query_body(depth + 1)
@@ -208,16 +208,20 @@ class JMDQueryParser:
             if line.heading_depth == 0:
                 self._advance()
                 if line.content == "?: ?":
-                    fields.append(QueryField(
-                        key="?",
-                        condition=Condition(op="?:", values=[]),
-                    ))
+                    fields.append(
+                        QueryField(
+                            key="?",
+                            condition=Condition(op="?:", values=[]),
+                        )
+                    )
                 elif ": " in line.content:
                     key_part, _, cond_part = line.content.partition(": ")
-                    fields.append(QueryField(
-                        key=parse_key(key_part),
-                        condition=_parse_condition(cond_part),
-                    ))
+                    fields.append(
+                        QueryField(
+                            key=parse_key(key_part),
+                            condition=_parse_condition(cond_part),
+                        )
+                    )
                 continue
 
             break
@@ -253,10 +257,12 @@ class JMDQueryParser:
                         break
                     scalars.append(parse_scalar(line.content[2:]))
                     self._advance()
-                return [QueryField(
-                    key="__scalar__",
-                    condition=Condition(op="in", values=scalars),
-                )]
+                return [
+                    QueryField(
+                        key="__scalar__",
+                        condition=Condition(op="in", values=scalars),
+                    )
+                ]
 
         # Object array items
         items: list[Any] = []
@@ -280,20 +286,24 @@ class JMDQueryParser:
                     q_item_fields_list: list[Any] = []
                     # First field
                     kp, _, cp = content_after.partition(": ")
-                    q_item_fields_list.append(QueryField(
-                        key=parse_key(kp),
-                        condition=_parse_condition(cp),
-                    ))
+                    q_item_fields_list.append(
+                        QueryField(
+                            key=parse_key(kp),
+                            condition=_parse_condition(cp),
+                        )
+                    )
                     # Indented continuation fields
                     while self._pos < len(self._lines):
                         nxt = self._lines[self._pos]
                         indent_result = _is_indent_field(nxt.raw_text)
                         if indent_result is not None:
                             _, ikp, icp = indent_result
-                            q_item_fields_list.append(QueryField(
-                                key=parse_key(ikp),
-                                condition=_parse_condition(icp),
-                            ))
+                            q_item_fields_list.append(
+                                QueryField(
+                                    key=parse_key(ikp),
+                                    condition=_parse_condition(icp),
+                                )
+                            )
                             self._advance()
                         else:
                             break
@@ -335,10 +345,8 @@ class JMDQueryExecutor:
                 if not isinstance(arr, list) or not f.item_fields:
                     continue
                 first = f.item_fields[0]
-                if (isinstance(first, QueryField)
-                        and first.key == "__scalar__"):
-                    if not set(first.condition.values).issubset(
-                            set(arr)):
+                if isinstance(first, QueryField) and first.key == "__scalar__":
+                    if not set(first.condition.values).issubset(set(arr)):
                         return False
                 else:
                     template = f.item_fields[0]
@@ -384,12 +392,12 @@ class JMDQueryExecutor:
         self, record: dict[str, Any], fields: list[Any]
     ) -> dict[str, Any]:
         project_keys = {
-            f.key for f in fields
+            f.key
+            for f in fields
             if isinstance(f, QueryField) and f.condition.op == "?"
         }
         has_wildcard = any(
-            isinstance(f, QueryField) and f.condition.op == "?:"
-            for f in fields
+            isinstance(f, QueryField) and f.condition.op == "?:" for f in fields
         )
         has_obj_proj = any(
             isinstance(f, (QueryObject, QueryArray)) for f in fields
@@ -407,7 +415,8 @@ class JMDQueryExecutor:
                         result[f.key] = record[f.key]
                 elif f.condition.op == "?:":
                     explicit = {
-                        g.key for g in fields
+                        g.key
+                        for g in fields
                         if isinstance(g, QueryField)
                         and g.key not in ("?", "?:")
                     }
@@ -418,14 +427,14 @@ class JMDQueryExecutor:
                 sub: Any = record.get(f.key, {})
                 if isinstance(sub, dict):
                     result[f.key] = self._project(
-                        cast(dict[str, Any], sub), f.fields)
+                        cast(dict[str, Any], sub), f.fields
+                    )
             elif isinstance(f, QueryArray):
                 arr = record.get(f.key, [])
                 if not isinstance(arr, list) or not f.item_fields:
                     continue
                 first = f.item_fields[0]
-                if (isinstance(first, QueryField)
-                        and first.key == "__scalar__"):
+                if isinstance(first, QueryField) and first.key == "__scalar__":
                     result[f.key] = arr
                 else:
                     template: Any = f.item_fields[0]

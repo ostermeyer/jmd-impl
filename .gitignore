@@ -11,4 +11,8 @@ wheelhouse/
 .pytest_cache/
 .ruff_cache/
 .vscode/
+.idea/
 .DS_Store
+
+# Local-only working notes / correspondence — never committed or pushed
+local/

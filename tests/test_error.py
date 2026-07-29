@@ -63,7 +63,7 @@ class TestErrorParsing:
             "## errors[]\n"
             "- field: items[0].qty\n"
             "  reason: must be positive\n"
-            "  value: \"-3\"\n"
+            '  value: "-3"\n'
             "- field: address.zip\n"
             "  reason: invalid format\n"
             "  value: abc\n"
