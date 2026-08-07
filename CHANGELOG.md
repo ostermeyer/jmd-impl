@@ -6,6 +6,10 @@ releases may carry behavioral (breaking) changes.
 
 ## [Unreleased]
 
+Vendored specification re-pinned to `6f5685cbcd17`, which carries the
+§8.6 object-scope level-pop, the §18.2 event-stream well-formedness
+rule, and five new `conformance/tolerance` fixtures.
+
 ### Fixed
 
 Level-pops (§8.6) into **object** scopes were unimplemented across all
