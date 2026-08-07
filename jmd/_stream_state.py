@@ -155,22 +155,6 @@ def close_top_scope(
         events.append(StreamEvent("ITEM_END"))
 
 
-def close_above_outermost_array(
-    scopes: list[Scope],
-    events: list[StreamEvent],
-) -> None:
-    """Close child scopes above the outermost open array."""
-    array_index: int | None = None
-    for index, scope in enumerate(scopes):
-        if scope.kind == "array":
-            array_index = index
-            break
-    if array_index is None:
-        return
-    while len(scopes) > array_index + 1:
-        close_top_scope(scopes, events)
-
-
 def has_open_array(scopes: list[Scope]) -> bool:
     """Return whether any array scope is open."""
     return any(scope.kind == "array" for scope in scopes)
