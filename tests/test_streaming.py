@@ -591,6 +591,29 @@ class TestLevelPop:
             "DOCUMENT_END",
         ]
 
+    def test_blank_before_item_closes_nested_item_scopes(self) -> None:
+        """Resume an array after a cosmetic blank below a nested object."""
+        evs = events(
+            "# O\n## items[]\n- name: a\n### child\nx: y\n\n- name: b"
+        )
+        assert [(e.type, e.key, e.value) for e in evs] == [
+            ("DOCUMENT_START", "O", None),
+            ("OBJECT_START", None, None),
+            ("ARRAY_START", "items", None),
+            ("ITEM_START", None, None),
+            ("FIELD", "name", "a"),
+            ("OBJECT_START", "child", None),
+            ("FIELD", "x", "y"),
+            ("OBJECT_END", "child", None),
+            ("ITEM_END", None, None),
+            ("ITEM_START", None, None),
+            ("FIELD", "name", "b"),
+            ("ITEM_END", None, None),
+            ("ARRAY_END", "items", None),
+            ("OBJECT_END", None, None),
+            ("DOCUMENT_END", None, None),
+        ]
+
     def test_object_level_pop_to_root(self) -> None:
         """Test that `#` closes a nested object and resumes at the root."""
         evs = events(

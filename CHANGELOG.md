@@ -46,6 +46,10 @@ Two further streaming defects, surfaced by the new fixture coverage below:
   pure decoration within an array body, with no structural effect. 0.7.0
   made this change for the batch parsers ("`---` inside an array body is
   now decoration", below); the streaming backend never received it.
+- A cosmetic blank line before the next array item left child scopes from
+  the preceding item open, so that valid nested items were rejected with
+  `invalid_structure`. The streamer now closes those scopes and the prior
+  item before starting its sibling, matching the batch parsers.
 - An INDENT outside an array item raised `invalid_indentation`, which is
   not a spec error kind. The batch parsers and the must-fail fixtures use
   `prose_in_body` (§3.6.2, §11.2).

@@ -278,6 +278,15 @@ class JMDStreamParser:
             (line.content == "-" or line.content.startswith("- "))
             and has_open_array(self._scopes)
         ):
+            # A cosmetic blank line between array items also returns from
+            # any child scopes opened by the preceding item.  Otherwise the
+            # next bare ``-`` sees the child object/array rather than its
+            # enclosing array and is rejected as invalid_structure.
+            for index in range(len(self._scopes) - 1, -1, -1):
+                if self._scopes[index].kind == "array":
+                    while len(self._scopes) > index + 1:
+                        close_top_scope(self._scopes, events)
+                    break
             return
         if is_thematic_break(line) and has_open_array(self._scopes):
             return
