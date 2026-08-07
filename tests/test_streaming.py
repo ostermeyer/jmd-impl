@@ -550,15 +550,15 @@ class TestLevelPop:
         assert types == [
             "DOCUMENT_START",
             "ARRAY_START",   # apis
-            "ITEM_START",
+            "ITEM_START",    # clockodo — stays open across its sub-array
             "FIELD",
-            "ITEM_END",
-            "ARRAY_START",   # headers
+            "ARRAY_START",   # headers — the item's own data (§18.2)
             "ITEM_START",
             "FIELD",
             "ITEM_END",
             "ARRAY_END",     # headers — apis must NOT close here
-            "ITEM_START",
+            "ITEM_END",      # clockodo, closed by the level-pop
+            "ITEM_START",    # public
             "FIELD",
             "ITEM_END",
             "ARRAY_END",     # apis

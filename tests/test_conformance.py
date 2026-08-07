@@ -583,3 +583,121 @@ def test_stream_rejects_must_fail_fixtures(
     with pytest.raises(JMDParseError) as exc:
         list(jmd.jmd_stream(jmd_text))
     assert exc.value.kind == expected["kind"]
+
+
+# Fixtures the fold check cannot decide, by open specification question.
+# Both are recorded as open in §18.2 / §22.2; neither is a defect in this
+# implementation, and both should shrink this list when they are settled.
+_FOLD_UNDECIDABLE = {
+    # The root scope's representation is unsettled: a root array arrives as
+    # an ARRAY_START keyed by the document label, indistinguishable from a
+    # child array sharing that label, so a consumer cannot attribute it.
+    "data/root-array",
+    "delete/bulk-composite",
+    "delete/bulk-scalar",
+    "tolerance/depth-plus-one-root-array",
+    "tolerance/indent-mixed",
+    "tolerance/indent-single-space",
+    "tolerance/indent-tab",
+    "tolerance/thematic-break-continuation",
+    # §7.4 promotes repeated headings to an implicit array. A streaming
+    # parser cannot know about the promotion until the second heading
+    # arrives, by which point the first scope has been emitted as an
+    # object, so the stream and the batch value legitimately differ.
+    "tolerance/repeated-headings-nested",
+    "tolerance/repeated-headings-promote",
+    "tolerance/repeated-headings-three",
+}
+
+
+def _fold_events(events: list[jmd.StreamEvent]) -> object:
+    """Rebuild a document value from a well-formed event stream.
+
+    §18.2 requires the stream to be a well-formed traversal: matched opens
+    and closes, in reverse order, with an item's sub-structures nested
+    inside that item's pair. A plain stack therefore suffices — a stream
+    this cannot fold is not well-formed, which is the property under test.
+    """
+    root: object = None
+    stack: list[object] = []
+    pending_key: str | None = None
+    pending: list[str] = []
+
+    def innermost() -> object:
+        nonlocal root
+        if stack:
+            return stack[-1]
+        if root is None:
+            root = {}
+        return root
+
+    def flush() -> None:
+        nonlocal pending_key
+        if pending_key is not None:
+            obj = cast(dict[str, object], innermost())
+            obj[pending_key] = "\n".join(pending)
+            pending_key = None
+            pending.clear()
+
+    def attach(key: str | None, child: object) -> None:
+        # Deliberately never promotes a container to the root: with the
+        # root's representation unsettled (§18.2), a root-level ARRAY_START
+        # cannot be told apart from a child array, and guessing would bake
+        # one reading of an open question into the test. Documents whose
+        # root is an array are skipped instead — see _FOLD_UNDECIDABLE.
+        top = innermost()
+        if isinstance(top, list):
+            top.append(child)
+        else:
+            assert key is not None, "container in an object needs a key"
+            cast(dict[str, object], top)[key] = child
+
+    for event in events:
+        kind = event.type
+        if kind == "FIELD_CONTENT":
+            pending.append(cast(str, event.value))
+            continue
+        flush()
+        if kind in ("DOCUMENT_START", "DOCUMENT_END"):
+            continue
+        if kind in ("OBJECT_START", "ITEM_START"):
+            child: object = {}
+            attach(event.key, child)
+            stack.append(child)
+        elif kind == "ARRAY_START":
+            child = []
+            attach(event.key, child)
+            stack.append(child)
+        elif kind in ("OBJECT_END", "ARRAY_END", "ITEM_END"):
+            assert stack, f"{kind} with no open scope"
+            stack.pop()
+        elif kind == "ITEM_VALUE":
+            cast(list[object], innermost()).append(event.value)
+        elif kind == "FIELD":
+            target = cast(dict[str, object], innermost())
+            target[cast(str, event.key)] = event.value
+        elif kind == "FIELD_START":
+            pending_key = cast(str, event.key)
+        else:  # pragma: no cover - guards against a new event type
+            raise AssertionError(f"unhandled event type {kind}")
+    flush()
+
+    assert not stack, f"{len(stack)} scope(s) left open at DOCUMENT_END"
+    return {} if root is None else root
+
+
+@pytest.mark.parametrize(
+    ("mode", "jmd_path", "json_path"),
+    _PAIRS,
+    ids=[f"{mode}/{path.stem}" for mode, path, _ in _PAIRS],
+)
+def test_stream_events_fold_to_the_json_oracle(
+    mode: str,
+    jmd_path: pathlib.Path,
+    json_path: pathlib.Path,
+) -> None:
+    """Fold each fixture's event stream and compare with the oracle."""
+    if f"{mode}/{jmd_path.stem}" in _FOLD_UNDECIDABLE:
+        pytest.skip("open specification question — see _FOLD_UNDECIDABLE")
+    jmd_text, expected = _load_value_oracle(jmd_path, json_path)
+    assert _fold_events(list(jmd.jmd_stream(jmd_text))) == expected

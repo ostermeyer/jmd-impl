@@ -333,6 +333,10 @@ class JMDStreamParser:
             # is open at depth D the loop closes nothing and the pop is a
             # no-op, which is what the spec's degenerate cases require.
             close_scopes_to(self._scopes, depth + 1, events)
+            # Returning to an array at depth D also ends the item that was
+            # open in it: the pop says "back at the array", so the next
+            # `- ` line is a sibling, not a continuation (§8.6).
+            close_current_item(self._scopes, depth, events)
             return
 
         close_scopes_to(self._scopes, depth, events)
@@ -429,13 +433,19 @@ class JMDStreamParser:
             close_top_scope(self._scopes, events)
         if not self._scopes or self._scopes[-1].kind != "array":
             self._raise_structure(line)
+        # §18.2: an item scope carries its *array's* depth, not the depth of
+        # the headings it may contain. At array_depth + 1 it collided with
+        # its own sub-structure, so `### sub[]` under a `## arr[]` item ran
+        # close_scopes_to(3) and closed the item before opening the child —
+        # emitting ITEM_END outside the pair that should enclose the child.
+        # The depth-qualified path (`## -`) already passes the array depth.
         array_depth = self._scopes[-1].depth
         if line.content == "-":
-            self._start_item(array_depth + 1, events)
+            self._start_item(array_depth, events)
             return
         self._emit_item_content(
             line.content[2:],
-            array_depth + 1,
+            array_depth,
             line.number,
             events,
         )

@@ -8,6 +8,8 @@ backends via the ``backend`` fixture.
 """
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 import jmd
@@ -19,9 +21,12 @@ def backend(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
 ) -> str:
-    if request.param == "py":
+    # Pytest's stubs type `request.param` as `Any`; narrow it so strict
+    # mode does not flag the return, matching test_conformance.py.
+    name = cast(str, request.param)
+    if name == "py":
         monkeypatch.setattr(jmd, "_HAS_CPARSER", False)
-    return request.param
+    return name
 
 
 def test_indented_root_rejected(backend: str) -> None:

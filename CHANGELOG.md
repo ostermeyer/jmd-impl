@@ -45,6 +45,17 @@ Two further streaming defects, surfaced by the new fixture coverage below:
   not a spec error kind. The batch parsers and the must-fail fixtures use
   `prose_in_body` (§3.6.2, §11.2).
 
+- **`ITEM_END` fired before the item's own sub-structures.** When a `- `
+  item opened a nested object or array at a deeper heading depth, the item
+  scope was closed first and the child emitted as a sibling, so the stream
+  was not a well-formed traversal and could not be folded back into a
+  document. The cause was the item scope carrying `array_depth + 1` — the
+  same depth as its own children, so `close_scopes_to` closed it — while
+  the depth-qualified `## -` path already used the array depth. Both now
+  use the array depth, and a level-pop closes the item it returns past.
+  §18.2 now states the well-formedness rule; the JavaScript implementation
+  already behaved this way.
+
 ### Added
 
 - `tests/test_conformance.py` now runs every fixture through the streaming
@@ -56,11 +67,21 @@ Two further streaming defects, surfaced by the new fixture coverage below:
   into a document needs an ordering assumption §18 does not state.
 - `tests/test_streaming.py::TestLevelPop` asserts full event sequences for
   object- and array-scope level-pops.
+- `test_stream_events_fold_to_the_json_oracle` folds every fixture's event
+  stream back into a value with a plain stack and compares it against the
+  JSON oracle — the check §22.2 recommends, and the one that would have
+  caught the `ITEM_END` ordering. Eleven fixtures are skipped against two
+  open specification questions, named in `_FOLD_UNDECIDABLE`: how the root
+  scope appears in the stream (§18.2), and how a §7.4 repeated-heading
+  promotion is represented when the parser only learns of it after the
+  first scope has been emitted.
 - `tests/test_spec_v035.py` gains five §8.6 parse cases, run across all
   three parser backends, including the C accelerator.
 
 ### Packaging
 
+- Add `types-setuptools` to the dev dependency group; without it `setup.py`
+  and `build_ext.py` do not type-check under `strict = true`.
 - `pip install -e .` aborted with `can't copy ...cpython-*.so: doesn't
   exist` on a machine without a C compiler, instead of falling back to
   pure Python as documented. `OptionalBuildExt` swallowed the compile

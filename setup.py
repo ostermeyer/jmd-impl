@@ -63,7 +63,7 @@ class OptionalBuildExt(build_ext):
                 if ext not in self._failed_extensions
             ]
 
-    def build_extension(self, ext):
+    def build_extension(self, ext: Extension) -> None:
         """Build the extension, silently skipping if compilation fails."""
         try:
             super().build_extension(ext)
