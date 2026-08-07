@@ -53,6 +53,25 @@ parse_object_body(ParserState *st, int depth)
             }
         }
 
+        /* §8.6 level-pop into an object scope. Recursive descent means
+         * deeper scopes have already returned by the time we see this
+         * line, so we are the innermost open scope:
+         *   hd < depth   the pop targets an enclosing scope — return and
+         *                let it consume the line.
+         *   hd == depth  the pop targets us; nothing left to close.
+         *   hd > depth   no scope was ever established that deep; the pop
+         *                clamps to us. Both are no-ops.
+         * A level-pop never opens a scope, so this must not reach
+         * parse_heading_into (an anonymous `[]` sub-array heading has
+         * content_len 2 and is unaffected). Mirrors the array-scope
+         * level-pop in _cparser_array.c. */
+        if (hd > 0 && line->content_len == 0) {
+            if (hd < depth)
+                break;
+            pos++;
+            continue;
+        }
+
         /* Heading at depth or shallower: scope ends */
         if (hd > 0 && hd <= depth)
             break;

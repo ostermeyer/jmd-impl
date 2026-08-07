@@ -4,6 +4,35 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [Unreleased]
+
+### Fixed
+
+Level-pops (§8.6) into **object** scopes were unimplemented across all
+three parser backends. §3.2a extends the level-pop to every depth,
+including `#` at depth 1, but §8.6 documented only the array case, and
+all three backends read it that way. No serializer emits an object-scope
+level-pop — a field after a nested object is written as a scalar heading
+(§7.2) — so round-trip testing never reached the path. The inputs that
+do reach it are hand-written and model-generated documents.
+
+- **Pure-Python batch parser** dropped fields silently after `#` returned
+  to the root, and raised a bare `IndexError` from `parse_key("")` for
+  every other object-scope pop — an unstructured crash, not a
+  `JMDParseError`. Over-deep pops raised `prose_in_body`.
+- **C batch parser** had the identical gap in `parse_object_body`; the
+  fix mirrors the existing array-scope level-pop in `_cparser_array.c`.
+  **Not yet compiled or executed** — no C toolchain was available in the
+  environment where this was written.
+- **Streaming parser** closed scopes at *and deeper than* the pop depth
+  rather than deeper only, so the pop target itself was closed. This also
+  broke the *array* case: `conformance/data/array-level-pop.jmd`, a
+  canonical fixture, raised `invalid_structure`. `tests/test_conformance.py`
+  never runs fixtures through the streaming backend, so it went unnoticed.
+
+Degenerate pops are now no-ops per §8.6: a pop at the current depth, and
+a pop deeper than any established scope, close nothing and are accepted.
+
 ## [0.8.0] — 2026-07-29
 
 Full cross-backend qualification against **JMD Specification v0.3.5**,

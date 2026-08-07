@@ -325,9 +325,18 @@ class JMDStreamParser:
             self._emit_item_content(content[2:], depth, line.number, events)
             return
 
-        close_scopes_to(self._scopes, depth, events)
         if content == "":
+            # §8.6 level-pop: close scopes *deeper than* D and continue in
+            # the scope at depth D. A labelled heading replaces the scope
+            # at its own depth (close_scopes_to(depth), below), but an
+            # anonymous one returns to it, so the target must survive the
+            # close. Applies to object and array scopes alike; if nothing
+            # is open at depth D the loop closes nothing and the pop is a
+            # no-op, which is what the spec's degenerate cases require.
+            close_scopes_to(self._scopes, depth + 1, events)
             return
+
+        close_scopes_to(self._scopes, depth, events)
         if content == "[]":
             events.append(StreamEvent("ARRAY_START"))
             self._scopes.append(Scope("array", None, depth))
