@@ -13,7 +13,7 @@ pip install git+https://github.com/ostermeyer/jmd-impl.git
 Or pin a specific release:
 
 ```bash
-pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.8.0
+pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.9.0
 ```
 
 Pre-built wheels for Linux, macOS, and Windows are attached to each
@@ -21,7 +21,7 @@ Pre-built wheels for Linux, macOS, and Windows are attached to each
 installed directly:
 
 ```bash
-pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.8.0/jmd_format-0.8.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.9.0/jmd_format-0.9.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
 The C extensions are built automatically during installation if a C compiler is available. If not, the pure-Python fallback is used transparently.

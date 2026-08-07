@@ -4,7 +4,7 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
-## [Unreleased]
+## [0.9.0] — 2026-08-07
 
 Vendored specification re-pinned to `21f316401c2e`, which carries the
 §8.6 object-scope level-pop, the §18.2 event-stream well-formedness
