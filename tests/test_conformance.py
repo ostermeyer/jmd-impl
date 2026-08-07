@@ -585,25 +585,12 @@ def test_stream_rejects_must_fail_fixtures(
     assert exc.value.kind == expected["kind"]
 
 
-# Fixtures the fold check cannot decide, by open specification question.
-# Both are recorded as open in §18.2 / §22.2; neither is a defect in this
-# implementation, and both should shrink this list when they are settled.
+# §7.4 promotes repeated headings to an implicit array. A streaming parser
+# cannot know of the promotion until the second heading arrives, by which
+# point the first scope has been emitted as an object, so the folded stream
+# and the batch value legitimately differ. §22.2 names this as the one
+# construct a stream cannot express; everything else must fold exactly.
 _FOLD_UNDECIDABLE = {
-    # The root scope's representation is unsettled: a root array arrives as
-    # an ARRAY_START keyed by the document label, indistinguishable from a
-    # child array sharing that label, so a consumer cannot attribute it.
-    "data/root-array",
-    "delete/bulk-composite",
-    "delete/bulk-scalar",
-    "tolerance/depth-plus-one-root-array",
-    "tolerance/indent-mixed",
-    "tolerance/indent-single-space",
-    "tolerance/indent-tab",
-    "tolerance/thematic-break-continuation",
-    # §7.4 promotes repeated headings to an implicit array. A streaming
-    # parser cannot know about the promotion until the second heading
-    # arrives, by which point the first scope has been emitted as an
-    # object, so the stream and the batch value legitimately differ.
     "tolerance/repeated-headings-nested",
     "tolerance/repeated-headings-promote",
     "tolerance/repeated-headings-three",
@@ -640,11 +627,14 @@ def _fold_events(events: list[jmd.StreamEvent]) -> object:
             pending.clear()
 
     def attach(key: str | None, child: object) -> None:
-        # Deliberately never promotes a container to the root: with the
-        # root's representation unsettled (§18.2), a root-level ARRAY_START
-        # cannot be told apart from a child array, and guessing would bake
-        # one reading of an open question into the test. Documents whose
-        # root is an array are skipped instead — see _FOLD_UNDECIDABLE.
+        nonlocal root
+        if not stack and root is None:
+            # §18.2: the root is the one scope opened while the stack is
+            # empty, and it carries no key. No guessing is needed — that
+            # is the point of the keyless pair.
+            assert key is None, f"root scope opened with key {key!r}"
+            root = child
+            return
         top = innermost()
         if isinstance(top, list):
             top.append(child)

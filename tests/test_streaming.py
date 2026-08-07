@@ -231,17 +231,30 @@ class TestJMDStreamParser:
         """Test JMDStreamParser.events over an iterable of lines."""
         evs = list(JMDStreamParser.events(["# Order", "id: 42"]))
         types = [e.type for e in evs]
-        assert types == ["DOCUMENT_START", "FIELD", "DOCUMENT_END"]
+        assert types == [
+            "DOCUMENT_START",
+            "OBJECT_START",
+            "FIELD",
+            "OBJECT_END",
+            "DOCUMENT_END",
+        ]
 
     def test_process_line_emits_completed_lines(self) -> None:
         """Emit each semantic event when its completed line arrives (§18.2)."""
         parser = JMDStreamParser()
         root_events = parser.process_line("# Doc")
-        assert [event.type for event in root_events] == ["DOCUMENT_START"]
+        # §18.2: the root heading opens the root scope as well.
+        assert [event.type for event in root_events] == [
+            "DOCUMENT_START",
+            "OBJECT_START",
+        ]
 
         field_events = parser.process_line("x: 1")
         assert [event.type for event in field_events] == ["FIELD"]
-        assert [event.type for event in parser.finish()] == ["DOCUMENT_END"]
+        assert [event.type for event in parser.finish()] == [
+            "OBJECT_END",
+            "DOCUMENT_END",
+        ]
 
     def test_process_line_streams_blockquote_content(self) -> None:
         """Emit FIELD_START and each FIELD_CONTENT line independently."""
@@ -277,6 +290,7 @@ class TestJMDStreamParser:
         ]
         assert [event.type for event in parser.finish()] == [
             "ARRAY_END",
+            "OBJECT_END",
             "DOCUMENT_END",
         ]
 
@@ -341,8 +355,10 @@ class TestJMDStreamParser:
         assert parser.process_line("") == []
 
         root = parser.process_line("# Order")
-        assert len(root) == 1
-        assert root[0].type == "DOCUMENT_START"
+        assert [event.type for event in root] == [
+            "DOCUMENT_START",
+            "OBJECT_START",
+        ]
         assert root[0].frontmatter == {"confidence": "high"}
 
     def test_parser_does_not_retain_completed_source_lines(self) -> None:
@@ -397,7 +413,7 @@ class TestJMDStreamParser:
         parser = JMDStreamParser()
         assert [
             event.type for event in parser.process_line("\ufeff# Doc")
-        ] == ["DOCUMENT_START"]
+        ] == ["DOCUMENT_START", "OBJECT_START"]
 
     def test_lone_carriage_return_is_rejected_incrementally(self) -> None:
         r"""Reject a lone \r that is not the CR half of a line ending."""
@@ -446,7 +462,7 @@ class TestAsyncStreamingAPI:
 
         async def lines() -> AsyncIterator[str]:
             yield "# Doc"
-            assert observed == ["DOCUMENT_START"]
+            assert observed == ["DOCUMENT_START", "OBJECT_START"]
             yield "id: 7"
 
         async def go() -> None:
@@ -454,7 +470,13 @@ class TestAsyncStreamingAPI:
                 observed.append(event.type)
 
         asyncio.run(go())
-        assert observed == ["DOCUMENT_START", "FIELD", "DOCUMENT_END"]
+        assert observed == [
+            "DOCUMENT_START",
+            "OBJECT_START",
+            "FIELD",
+            "OBJECT_END",
+            "DOCUMENT_END",
+        ]
 
     def test_to_lines_splits_chunks(self) -> None:
         """Test that to_lines splits an async iterable of arbitrary chunks."""
@@ -510,7 +532,9 @@ class TestAsyncStreamingAPI:
         # value=None for DOCUMENT_START events.
         assert result == [
             ("DOCUMENT_START", "Doc", None),
+            ("OBJECT_START", None, None),
             ("FIELD", "id", 7),
+            ("OBJECT_END", None, None),
             ("DOCUMENT_END", None, None),
         ]
 
@@ -549,6 +573,7 @@ class TestLevelPop:
         )
         assert types == [
             "DOCUMENT_START",
+            "OBJECT_START",  # the root scope (§18.2)
             "ARRAY_START",   # apis
             "ITEM_START",    # clockodo — stays open across its sub-array
             "FIELD",
@@ -562,6 +587,7 @@ class TestLevelPop:
             "FIELD",
             "ITEM_END",
             "ARRAY_END",     # apis
+            "OBJECT_END",    # the root scope
             "DOCUMENT_END",
         ]
 
@@ -572,11 +598,13 @@ class TestLevelPop:
         )
         assert [(e.type, e.key) for e in evs] == [
             ("DOCUMENT_START", "Order"),
+            ("OBJECT_START", None),
             ("FIELD", "id"),
             ("OBJECT_START", "address"),
             ("FIELD", "city"),
             ("OBJECT_END", "address"),
             ("FIELD", "note"),
+            ("OBJECT_END", None),
             ("DOCUMENT_END", None),
         ]
 
@@ -585,6 +613,7 @@ class TestLevelPop:
         evs = events("# Doc\n## a\nx: 1\n### b\ny: 2\n##\nz: 3")
         assert [(e.type, e.key) for e in evs] == [
             ("DOCUMENT_START", "Doc"),
+            ("OBJECT_START", None),
             ("OBJECT_START", "a"),
             ("FIELD", "x"),
             ("OBJECT_START", "b"),
@@ -592,6 +621,7 @@ class TestLevelPop:
             ("OBJECT_END", "b"),
             ("FIELD", "z"),      # inside a — a is still open
             ("OBJECT_END", "a"),
+            ("OBJECT_END", None),
             ("DOCUMENT_END", None),
         ]
 
@@ -600,10 +630,12 @@ class TestLevelPop:
         evs = events("# Doc\n## a\nx: 1\n##\ny: 2")
         assert [(e.type, e.key) for e in evs] == [
             ("DOCUMENT_START", "Doc"),
+            ("OBJECT_START", None),
             ("OBJECT_START", "a"),
             ("FIELD", "x"),
             ("FIELD", "y"),
             ("OBJECT_END", "a"),
+            ("OBJECT_END", None),
             ("DOCUMENT_END", None),
         ]
 
@@ -612,7 +644,9 @@ class TestLevelPop:
         evs = events("# Doc\nx: 1\n###\ny: 2")
         assert [(e.type, e.key, e.value) for e in evs] == [
             ("DOCUMENT_START", "Doc", None),
+            ("OBJECT_START", None, None),
             ("FIELD", "x", 1),
             ("FIELD", "y", 2),
+            ("OBJECT_END", None, None),
             ("DOCUMENT_END", None, None),
         ]

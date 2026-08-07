@@ -104,12 +104,13 @@ def register_key(
 
 
 def reset_scopes(scopes: list[Scope], events: list[StreamEvent]) -> None:
-    """Close every non-document scope after a semantic blank line."""
-    close_count = 0
-    for scope in reversed(scopes):
-        if scope.kind == "doc":
-            break
-        close_count += 1
+    """Close every scope above the root after a semantic blank line."""
+    # §18.2: a blank line returns to the root (§7.2a); it does not end the
+    # document, so the root survives and is closed only before
+    # DOCUMENT_END. The root is always scopes[0] — testing for the "doc"
+    # kind instead missed a root *array*, which is a plain array scope and
+    # was being closed out from under the rest of the document.
+    close_count = max(len(scopes) - 1, 0)
     if close_count == 0:
         return
     events.append(StreamEvent("SCOPE_RESET"))
@@ -147,7 +148,9 @@ def close_top_scope(
 ) -> None:
     """Close the innermost scope and emit its terminal event."""
     scope = scopes.pop()
-    if scope.kind == "object":
+    if scope.kind in ("doc", "object"):
+        # "doc" is the root object scope; §18.2 closes it with a keyless
+        # OBJECT_END, symmetric with the OBJECT_START that opened it.
         events.append(StreamEvent("OBJECT_END", key=scope.key))
     elif scope.kind == "array":
         events.append(StreamEvent("ARRAY_END", key=scope.key))

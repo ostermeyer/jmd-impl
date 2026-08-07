@@ -252,12 +252,18 @@ class JMDStreamParser:
             )
         )
         self._frontmatter.clear()
+        # §18.2: the root is opened and closed like any other scope, and
+        # carries no key — a key names the slot a scope occupies in its
+        # parent, and the root has no parent. The label rides on
+        # DOCUMENT_START. This is what lets a consumer learn the root's
+        # kind even for an empty document, where the label cannot say
+        # (DOCUMENT_START strips any `[]` sigil, §3.6).
         if self._root_is_array:
-            array_key = label or "[]"
-            events.append(StreamEvent("ARRAY_START", key=array_key))
-            self._scopes.append(Scope("array", array_key, 1))
+            events.append(StreamEvent("ARRAY_START"))
+            self._scopes.append(Scope("array", None, 1))
         else:
-            self._scopes.append(Scope("doc", label, 0))
+            events.append(StreamEvent("OBJECT_START"))
+            self._scopes.append(Scope("doc", None, 0))
 
     def _resolve_pending_blank(
         self,

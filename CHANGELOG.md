@@ -6,9 +6,10 @@ releases may carry behavioral (breaking) changes.
 
 ## [Unreleased]
 
-Vendored specification re-pinned to `6f5685cbcd17`, which carries the
+Vendored specification re-pinned to `21f316401c2e`, which carries the
 §8.6 object-scope level-pop, the §18.2 event-stream well-formedness
-rule, and five new `conformance/tolerance` fixtures.
+rule and root-scope decision, and five new `conformance/tolerance`
+fixtures.
 
 ### Fixed
 
@@ -60,6 +61,20 @@ Two further streaming defects, surfaced by the new fixture coverage below:
   §18.2 now states the well-formedness rule; the JavaScript implementation
   already behaved this way.
 
+- **The root scope is now opened and closed like any other** (§18.2), by
+  a keyless `OBJECT_START` / `ARRAY_START` immediately after
+  `DOCUMENT_START` and its matching close immediately before
+  `DOCUMENT_END`. Previously a root object emitted neither, and a root
+  array emitted a pair keyed by the document label — so a consumer could
+  not tell it from a child array sharing that label, and could not learn
+  the root's kind at all for an empty document. **Breaking for streaming
+  consumers:** every stream now carries two more events, and the root
+  array's `ARRAY_START` no longer carries a key.
+- `reset_scopes` closed every scope down to the first of kind `doc`, which
+  meant a blank line inside a **root array** closed the root itself out
+  from under the rest of the document. It now stops above the root
+  whatever the root's kind, matching §18.2.
+
 ### Added
 
 - `tests/test_conformance.py` now runs every fixture through the streaming
@@ -74,10 +89,9 @@ Two further streaming defects, surfaced by the new fixture coverage below:
 - `test_stream_events_fold_to_the_json_oracle` folds every fixture's event
   stream back into a value with a plain stack and compares it against the
   JSON oracle — the check §22.2 recommends, and the one that would have
-  caught the `ITEM_END` ordering. Eleven fixtures are skipped against two
-  open specification questions, named in `_FOLD_UNDECIDABLE`: how the root
-  scope appears in the stream (§18.2), and how a §7.4 repeated-heading
-  promotion is represented when the parser only learns of it after the
+  caught the `ITEM_END` ordering. Three fixtures are skipped, all for the
+  one construct §22.2 states a stream cannot express: a §7.4
+  repeated-heading promotion, which the parser only learns of after the
   first scope has been emitted.
 - `tests/test_spec_v035.py` gains five §8.6 parse cases, run across all
   three parser backends, including the C accelerator.
