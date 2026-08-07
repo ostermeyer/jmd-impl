@@ -529,3 +529,90 @@ class TestAsyncStreamingAPI:
 
         result = asyncio.run(go())
         assert ("FIELD", "id", 42) in result
+
+
+class TestLevelPop:
+    """Tests for §8.6 level-pops in the streaming backend.
+
+    A level-pop returns to the scope at depth *D*; a labelled heading
+    replaces it. The distinction matters for scope closing: the pop target
+    must survive. These sequences are asserted in full because the bug this
+    guards against closed one scope too many, which a membership check on
+    event types would not have caught.
+    """
+
+    def test_array_level_pop_keeps_the_outer_array_open(self) -> None:
+        """Test that `#` after a sub-array resumes the outer array."""
+        types = event_types(
+            "# Registry\n## apis[]\n- name: clockodo\n"
+            "### headers[]\n- name: X-Api-User\n##\n- name: public"
+        )
+        assert types == [
+            "DOCUMENT_START",
+            "ARRAY_START",   # apis
+            "ITEM_START",
+            "FIELD",
+            "ITEM_END",
+            "ARRAY_START",   # headers
+            "ITEM_START",
+            "FIELD",
+            "ITEM_END",
+            "ARRAY_END",     # headers — apis must NOT close here
+            "ITEM_START",
+            "FIELD",
+            "ITEM_END",
+            "ARRAY_END",     # apis
+            "DOCUMENT_END",
+        ]
+
+    def test_object_level_pop_to_root(self) -> None:
+        """Test that `#` closes a nested object and resumes at the root."""
+        evs = events(
+            "# Order\nid: 42\n## address\ncity: Berlin\n#\nnote: gift wrap"
+        )
+        assert [(e.type, e.key) for e in evs] == [
+            ("DOCUMENT_START", "Order"),
+            ("FIELD", "id"),
+            ("OBJECT_START", "address"),
+            ("FIELD", "city"),
+            ("OBJECT_END", "address"),
+            ("FIELD", "note"),
+            ("DOCUMENT_END", None),
+        ]
+
+    def test_object_level_pop_to_intermediate_depth(self) -> None:
+        """Test that `##` resumes the depth-2 object, not the root."""
+        evs = events("# Doc\n## a\nx: 1\n### b\ny: 2\n##\nz: 3")
+        assert [(e.type, e.key) for e in evs] == [
+            ("DOCUMENT_START", "Doc"),
+            ("OBJECT_START", "a"),
+            ("FIELD", "x"),
+            ("OBJECT_START", "b"),
+            ("FIELD", "y"),
+            ("OBJECT_END", "b"),
+            ("FIELD", "z"),      # inside a — a is still open
+            ("OBJECT_END", "a"),
+            ("DOCUMENT_END", None),
+        ]
+
+    def test_level_pop_at_current_depth_is_a_noop(self) -> None:
+        """Test that a pop targeting the open scope closes nothing."""
+        evs = events("# Doc\n## a\nx: 1\n##\ny: 2")
+        assert [(e.type, e.key) for e in evs] == [
+            ("DOCUMENT_START", "Doc"),
+            ("OBJECT_START", "a"),
+            ("FIELD", "x"),
+            ("FIELD", "y"),
+            ("OBJECT_END", "a"),
+            ("DOCUMENT_END", None),
+        ]
+
+    def test_over_deep_level_pop_is_a_noop(self) -> None:
+        """Test that a pop deeper than any open scope closes nothing."""
+        evs = events("# Doc\nx: 1\n###\ny: 2")
+        assert [(e.type, e.key, e.value) for e in evs] == [
+            ("DOCUMENT_START", "Doc", None),
+            ("FIELD", "x", 1),
+            ("FIELD", "y", 2),
+            ("DOCUMENT_END", None, None),
+        ]

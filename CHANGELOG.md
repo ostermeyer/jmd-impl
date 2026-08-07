@@ -33,6 +33,31 @@ do reach it are hand-written and model-generated documents.
 Degenerate pops are now no-ops per §8.6: a pop at the current depth, and
 a pop deeper than any established scope, close nothing and are accepted.
 
+Two further streaming defects, surfaced by the new fixture coverage below:
+
+- A thematic break inside an array body closed the open item scope, so an
+  indented continuation line after `---` was rejected. §8.6 makes `---`
+  pure decoration within an array body, with no structural effect. 0.7.0
+  made this change for the batch parsers ("`---` inside an array body is
+  now decoration", below); the streaming backend never received it.
+- An INDENT outside an array item raised `invalid_indentation`, which is
+  not a spec error kind. The batch parsers and the must-fail fixtures use
+  `prose_in_body` (§3.6.2, §11.2).
+
+### Added
+
+- `tests/test_conformance.py` now runs every fixture through the streaming
+  backend — acceptance and `DOCUMENT_START`/`DOCUMENT_END` framing for the
+  corpus, error-kind equality for `must-fail`. The module previously did
+  not reference the streaming parser at all. These tests do not rebuild a
+  value from the event stream: a nested container belonging to an array
+  item is emitted after that item's `ITEM_END`, so folding events back
+  into a document needs an ordering assumption §18 does not state.
+- `tests/test_streaming.py::TestLevelPop` asserts full event sequences for
+  object- and array-scope level-pops.
+- `tests/test_spec_v035.py` gains five §8.6 parse cases, run across all
+  three parser backends, so the C fix is covered once the extension builds.
+
 ## [0.8.0] — 2026-07-29
 
 Full cross-backend qualification against **JMD Specification v0.3.5**,

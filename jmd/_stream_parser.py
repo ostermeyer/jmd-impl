@@ -372,7 +372,13 @@ class JMDStreamParser:
     ) -> None:
         """Process a non-heading body line."""
         if is_thematic_break(line):
-            close_above_outermost_array(self._scopes, events)
+            # §8.6: within an array body a thematic break is pure
+            # decoration with no structural effect, and explicitly not an
+            # item separator. Closing the open item here severed the
+            # `- key: val` / indented-continuation pair, so a continuation
+            # line after `---` was rejected. Outside an array the helper
+            # was already a no-op, so skipping outright changes nothing
+            # there.
             return
         if line.raw_text.strip().startswith(">"):
             raise JMDParseError(
@@ -387,8 +393,12 @@ class JMDStreamParser:
         field_parts = split_field(line.content)
         if line.raw_text.startswith((" ", "\t")):
             if not self._scopes or self._scopes[-1].kind != "item":
+                # §3.6.2/§11.2: an INDENT outside an array item is prose,
+                # not an indentation defect. `invalid_indentation` is not
+                # a spec error kind; the batch parsers and the must-fail
+                # fixtures both use `prose_in_body`.
                 raise JMDParseError(
-                    kind="invalid_indentation",
+                    kind="prose_in_body",
                     line=line.number,
                     key="",
                 )

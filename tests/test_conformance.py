@@ -530,3 +530,56 @@ def test_q6_generator_preserves_embedded_nul(
     """Preserve embedded NUL code points across every backend pairing."""
     serialized = serializer_surface.serialize(envelope)
     assert parser_surface.parse(serialized) == envelope
+
+
+# ---------------------------------------------------------------------------
+# Streaming backend — fixture coverage
+#
+# The batch parsers are qualified against every fixture above; the streaming
+# parser was not exercised by this module at all. That gap let a canonical
+# data/ fixture (array-level-pop) raise invalid_structure in the streaming
+# backend while the suite stayed green.
+#
+# These tests deliberately do not reconstruct a value from the event stream.
+# A nested container belonging to an array item is emitted after that item's
+# ITEM_END, so folding events back into a document requires an assumption
+# about event ordering that §18 does not state. Asserting acceptance and
+# rejection is what can be checked without encoding that assumption; exact
+# sequences for specific constructs are asserted in tests/test_streaming.py.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("mode", "jmd_path", "json_path"),
+    _PAIRS,
+    ids=[f"{mode}/{path.stem}" for mode, path, _ in _PAIRS],
+)
+def test_stream_accepts_every_fixture(
+    mode: str,
+    jmd_path: pathlib.Path,
+    json_path: pathlib.Path,
+) -> None:
+    """Stream every fixture the batch parsers accept, without error."""
+    del mode, json_path
+    jmd_text = _read_jmd_fixture(jmd_path)
+    events = list(jmd.jmd_stream(jmd_text))
+    assert events, "streaming produced no events"
+    assert events[0].type == "DOCUMENT_START"
+    assert events[-1].type == "DOCUMENT_END"
+
+
+@pytest.mark.parametrize(
+    ("jmd_path", "err_path"),
+    _MUST_FAIL,
+    ids=_MUST_FAIL_IDS,
+)
+def test_stream_rejects_must_fail_fixtures(
+    jmd_path: pathlib.Path,
+    err_path: pathlib.Path,
+) -> None:
+    """Reject in the streaming backend whatever the batch parsers reject."""
+    expected = json.loads(err_path.read_text(encoding="utf-8"))
+    jmd_text = _read_jmd_fixture(jmd_path)
+    with pytest.raises(JMDParseError) as exc:
+        list(jmd.jmd_stream(jmd_text))
+    assert exc.value.kind == expected["kind"]

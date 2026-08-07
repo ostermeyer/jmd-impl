@@ -309,6 +309,54 @@ _PARSE_CASES = (
         jmd.Envelope(mode="data", label="X", value={}),
         id="rt-058-whitespace-only-body",
     ),
+    # §8.6 level-pops into an object scope. No serializer emits these — a
+    # field after a nested object is written as a scalar heading (§7.2) —
+    # so no round-trip or serializer case can reach this path.
+    pytest.param(
+        "# Order\nid: 42\n## address\ncity: Berlin\n#\nnote: gift wrap",
+        jmd.Envelope(
+            mode="data",
+            label="Order",
+            value={
+                "id": 42,
+                "address": {"city": "Berlin"},
+                "note": "gift wrap",
+            },
+        ),
+        id="s86-object-level-pop-to-root",
+    ),
+    pytest.param(
+        "# Doc\n## a\nx: 1\n### b\ny: 2\n##\nz: 3",
+        jmd.Envelope(
+            mode="data",
+            label="Doc",
+            value={"a": {"x": 1, "b": {"y": 2}, "z": 3}},
+        ),
+        id="s86-object-level-pop-to-intermediate",
+    ),
+    pytest.param(
+        "# Doc\n## config\nretries: 3\n### hosts[]\n- alpha\n##\ntimeout: 30",
+        jmd.Envelope(
+            mode="data",
+            label="Doc",
+            value={"config": {"retries": 3, "hosts": ["alpha"], "timeout": 30}},
+        ),
+        id="s86-object-level-pop-closes-array",
+    ),
+    pytest.param(
+        "# Doc\n## a\nx: 1\n##\ny: 2",
+        jmd.Envelope(
+            mode="data",
+            label="Doc",
+            value={"a": {"x": 1, "y": 2}},
+        ),
+        id="s86-level-pop-noop-same-depth",
+    ),
+    pytest.param(
+        "# Doc\nx: 1\n###\ny: 2",
+        jmd.Envelope(mode="data", label="Doc", value={"x": 1, "y": 2}),
+        id="s86-level-pop-noop-over-deep",
+    ),
 )
 
 
