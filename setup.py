@@ -33,7 +33,21 @@ class OptionalBuildExt(build_ext):
 
     Applies compiler-appropriate ``extra_compile_args`` before building
     so the GCC ``-O3`` flag does not break MSVC, which uses ``/O2``.
+
+    Swallowing the compile error is not enough on its own: an extension
+    that failed to build must also be dropped from ``self.extensions``.
+    Everything downstream — wheel assembly, and ``copy_extensions_to_source``
+    for editable installs — derives its file list from that attribute, and
+    will otherwise abort with ``can't copy ...: doesn't exist`` looking for
+    an artifact that was never produced. That turned a machine without a
+    compiler into a hard install failure instead of the documented
+    transparent fallback to pure Python.
     """
+
+    def finalize_options(self) -> None:
+        """Prepare the per-run record of extensions that failed to build."""
+        super().finalize_options()
+        self._failed_extensions: list[Extension] = []
 
     def build_extensions(self) -> None:
         """Set compiler-appropriate ``extra_compile_args`` and build."""
@@ -42,13 +56,19 @@ class OptionalBuildExt(build_ext):
         for ext in self.extensions:
             ext.extra_compile_args = list(args)
         super().build_extensions()
+        if self._failed_extensions:
+            self.extensions = [
+                ext
+                for ext in self.extensions
+                if ext not in self._failed_extensions
+            ]
 
     def build_extension(self, ext):
         """Build the extension, silently skipping if compilation fails."""
         try:
             super().build_extension(ext)
         except Exception:
-            pass
+            self._failed_extensions.append(ext)
 
 
 setup(

@@ -20,10 +20,11 @@ do reach it are hand-written and model-generated documents.
   to the root, and raised a bare `IndexError` from `parse_key("")` for
   every other object-scope pop — an unstructured crash, not a
   `JMDParseError`. Over-deep pops raised `prose_in_body`.
-- **C batch parser** had the identical gap in `parse_object_body`; the
-  fix mirrors the existing array-scope level-pop in `_cparser_array.c`.
-  **Not yet compiled or executed** — no C toolchain was available in the
-  environment where this was written.
+- **C batch parser** had the identical gap in `parse_object_body`,
+  rejecting these documents with a structured error instead of performing
+  the pop. The fix mirrors the existing array-scope level-pop in
+  `_cparser_array.c`. Compiled and verified: all five §8.6 cases fail on
+  the C backend without it and pass with it.
 - **Streaming parser** closed scopes at *and deeper than* the pop depth
   rather than deeper only, so the pop target itself was closed. This also
   broke the *array* case: `conformance/data/array-level-pop.jmd`, a
@@ -56,7 +57,20 @@ Two further streaming defects, surfaced by the new fixture coverage below:
 - `tests/test_streaming.py::TestLevelPop` asserts full event sequences for
   object- and array-scope level-pops.
 - `tests/test_spec_v035.py` gains five §8.6 parse cases, run across all
-  three parser backends, so the C fix is covered once the extension builds.
+  three parser backends, including the C accelerator.
+
+### Packaging
+
+- `pip install -e .` aborted with `can't copy ...cpython-*.so: doesn't
+  exist` on a machine without a C compiler, instead of falling back to
+  pure Python as documented. `OptionalBuildExt` swallowed the compile
+  error but left the extension in `self.extensions`, from which
+  `copy_extensions_to_source` then derived a file list naming artifacts
+  that were never produced. Failed extensions are now dropped from that
+  list. Non-editable installs were unaffected, which is why this went
+  unnoticed. Verified on a clean export in both directions: with a
+  compiler the accelerators still build and load; without one the install
+  now succeeds and `_HAS_CPARSER` / `_HAS_CSERIALIZER` are `False`.
 
 ## [0.8.0] — 2026-07-29
 

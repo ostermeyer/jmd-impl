@@ -19,7 +19,6 @@ from ._stream_state import (
     Blockquote,
     BlockScalar,
     Scope,
-    close_above_outermost_array,
     close_current_item,
     close_scopes_to,
     close_top_scope,
