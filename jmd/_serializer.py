@@ -134,36 +134,30 @@ class JMDSerializer:
         lines: list[str],
         depth: int,
     ) -> None:
-        needs_heading = False
-        for key, value in obj.items():
-            k = quote_key(key)
-            if isinstance(value, dict):
-                lines.append("")
-                lines.append(f"{self._heading(depth + 1)}{k}")
-                self._write_object_fields(
-                    cast(dict[str, Any], value), lines, depth + 1
-                )
-                needs_heading = True
-            elif isinstance(value, list):
-                lines.append("")
-                lines.append(f"{self._heading(depth + 1)}{k}[]")
-                self._write_array_items(
-                    value, lines, depth + 1
-                )
-                needs_heading = True
-            elif isinstance(value, str) and "\n" in value:
-                # Multiline string → blockquote
-                if needs_heading:
-                    lines.append(f"{self._heading(depth + 1)}{k}:")
-                else:
+        # JMD's nested headings remain open until another root-level
+        # field is emitted. Group scalar fields before nested structures so
+        # insertion order cannot turn a valid scalar into a heading.
+        for nested in (False, True):
+            for key, value in obj.items():
+                is_nested = isinstance(value, (dict, list))
+                if is_nested != nested:
+                    continue
+                k = quote_key(key)
+                if isinstance(value, dict):
+                    lines.append("")
+                    lines.append(f"{self._heading(depth + 1)}{k}")
+                    self._write_object_fields(
+                        cast(dict[str, Any], value), lines, depth + 1
+                    )
+                elif isinstance(value, list):
+                    lines.append("")
+                    lines.append(f"{self._heading(depth + 1)}{k}[]")
+                    self._write_array_items(value, lines, depth + 1)
+                elif isinstance(value, str) and "\n" in value:
                     lines.append(f"{k}:")
-                self._write_multiline(value, lines)
-                needs_heading = True  # next scalar needs a heading
-            elif needs_heading:
-                lines.append(f"{self._heading(depth + 1)}{k}: "
-                             f"{serialize_scalar(value)}")
-            else:
-                lines.append(f"{k}: {serialize_scalar(value)}")
+                    self._write_multiline(value, lines)
+                else:
+                    lines.append(f"{k}: {serialize_scalar(value)}")
 
     def _write_array_items(
         self,

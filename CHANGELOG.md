@@ -4,6 +4,16 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.9.1] — 2026-08-25
+
+### Fixed
+
+Object serialization now emits scalar fields before headed arrays and nested
+objects. A scalar that followed an array in insertion order was previously
+serialized with a heading prefix and therefore parsed as a nested heading
+rather than as the object's field. The repair applies to both the pure-Python
+and C serializers and is covered by a regression test.
+
 ## [0.9.0] — 2026-08-07
 
 Vendored specification re-pinned to `21f316401c2e`, which carries the

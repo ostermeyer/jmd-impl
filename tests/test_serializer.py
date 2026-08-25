@@ -103,6 +103,22 @@ class TestArraySerialization:
         assert "## tags[]\n" in out
         assert "- a\n" in out
 
+    def test_scalars_after_array_remain_scalars(self) -> None:
+        """Nested values must not turn later fields into headings."""
+        out = serialize(
+            {
+                "id": "msg-1",
+                "recipients": ["agent"],
+                "created-at": "2026-08-25T18:00:00Z",
+                "intent": "Review the result.",
+            }
+        )
+        assert "## recipients[]\n- agent" in out
+        assert "## created-at:" not in out
+        assert "## intent:" not in out
+        assert "created-at: 2026-08-25T18:00:00Z" in out
+        assert "intent: Review the result." in out
+
     def test_object_array(self) -> None:
         """Test that a list of dicts is serialized with indented pairs."""
         out = serialize({"items": [{"name": "X", "qty": 1}]})
