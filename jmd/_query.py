@@ -7,7 +7,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
-from ._parser_common import _is_indent_field, _is_object_item_content
 from ._scalars import parse_key, parse_scalar
 from ._tokenizer import Line, tokenize
 
@@ -75,6 +74,41 @@ class JMDQuery:
         for f in self.fields:
             lines.append(f"  {f}")
         return "\n".join(lines)
+
+
+def _split_query_field(content: str) -> tuple[str, str] | None:
+    """Split a query field, retaining an explicitly empty condition.
+
+    Args:
+        content: One unindented field line without a heading marker.
+
+    Returns:
+        The key and raw condition, or ``None`` when the line is not a field.
+    """
+    if ": " in content:
+        key, _, condition = content.partition(": ")
+        return key, condition
+    if content.endswith(":"):
+        return content[:-1], ""
+    return None
+
+
+def _query_field_from_content(content: str) -> QueryField | None:
+    """Parse one query field while preserving an empty raw condition."""
+    parts = _split_query_field(content)
+    if parts is None:
+        return None
+    key, condition = parts
+    return QueryField(
+        key=parse_key(key), condition=_parse_condition(condition),
+    )
+
+
+def _indented_query_field(line: Line) -> QueryField | None:
+    """Return an indented array-item field, if ``line`` contains one."""
+    if len(line.raw_text) < 2 or line.raw_text[:2] != "  ":
+        return None
+    return _query_field_from_content(line.raw_text.lstrip(" "))
 
 
 def _parse_condition(raw: str) -> Condition:
@@ -191,18 +225,14 @@ class JMDQueryParser:
                     key = parse_key(content[:-2])
                     item_fields = self._parse_query_array_items(depth + 1)
                     fields.append(QueryArray(key=key, item_fields=item_fields))
-                elif ": " in content:
-                    key_part, _, cond_part = content.partition(": ")
-                    fields.append(
-                        QueryField(
-                            key=parse_key(key_part),
-                            condition=_parse_condition(cond_part),
-                        )
-                    )
                 else:
-                    key = parse_key(content)
-                    sub = self._parse_query_body(depth + 1)
-                    fields.append(QueryObject(key=key, fields=sub))
+                    field = _query_field_from_content(content)
+                    if field is not None:
+                        fields.append(field)
+                    else:
+                        key = parse_key(content)
+                        sub = self._parse_query_body(depth + 1)
+                        fields.append(QueryObject(key=key, fields=sub))
                 continue
 
             if line.heading_depth == 0:
@@ -214,14 +244,10 @@ class JMDQueryParser:
                             condition=Condition(op="?:", values=[]),
                         )
                     )
-                elif ": " in line.content:
-                    key_part, _, cond_part = line.content.partition(": ")
-                    fields.append(
-                        QueryField(
-                            key=parse_key(key_part),
-                            condition=_parse_condition(cond_part),
-                        )
-                    )
+                else:
+                    field = _query_field_from_content(line.content)
+                    if field is not None:
+                        fields.append(field)
                 continue
 
             break
@@ -244,7 +270,7 @@ class JMDQueryParser:
         # Check if first item is scalar or object
         if line.heading_depth == 0 and line.content.startswith("- "):
             content_after = line.content[2:]
-            if not _is_object_item_content(content_after):
+            if _query_field_from_content(content_after) is None:
                 # Scalar array items: - value
                 scalars: list[Any] = []
                 while True:
@@ -281,29 +307,16 @@ class JMDQueryParser:
             # - key: cond (object item with first field + indented continuation)
             if line.heading_depth == 0 and line.content.startswith("- "):
                 content_after = line.content[2:]
-                if _is_object_item_content(content_after):
+                first_field = _query_field_from_content(content_after)
+                if first_field is not None:
                     self._advance()
-                    q_item_fields_list: list[Any] = []
-                    # First field
-                    kp, _, cp = content_after.partition(": ")
-                    q_item_fields_list.append(
-                        QueryField(
-                            key=parse_key(kp),
-                            condition=_parse_condition(cp),
-                        )
-                    )
+                    q_item_fields_list: list[Any] = [first_field]
                     # Indented continuation fields
                     while self._pos < len(self._lines):
                         nxt = self._lines[self._pos]
-                        indent_result = _is_indent_field(nxt.raw_text)
-                        if indent_result is not None:
-                            _, ikp, icp = indent_result
-                            q_item_fields_list.append(
-                                QueryField(
-                                    key=parse_key(ikp),
-                                    condition=_parse_condition(icp),
-                                )
-                            )
+                        continuation = _indented_query_field(nxt)
+                        if continuation is not None:
+                            q_item_fields_list.append(continuation)
                             self._advance()
                         else:
                             break

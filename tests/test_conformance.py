@@ -38,7 +38,7 @@ ParseCallable = Callable[[str], jmd.Envelope]
 SerializeCallable = Callable[[jmd.Envelope], str]
 
 _REQUIRED_DIRECTORIES = frozenset(
-    {"data", "delete", "tolerance", "must-fail"}
+    {"data", "delete", "query", "tolerance", "must-fail"}
 )
 _C_PARSER_AVAILABLE = jmd._HAS_CPARSER
 _C_SERIALIZER_AVAILABLE = jmd._HAS_CSERIALIZER

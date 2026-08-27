@@ -4,6 +4,15 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.9.2] — 2026-08-27
+
+### Fixed
+
+`JMDQueryParser` now retains a valueless query field such as `status:` as an
+empty raw condition instead of silently dropping it. This applies at root,
+nested, and array-item scope; applications retain full control over the
+condition's semantics.
+
 ## [0.9.1] — 2026-08-25
 
 ### Fixed

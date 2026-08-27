@@ -35,6 +35,34 @@ class TestQueryParsing:
         assert q.fields[0].key == "status"
         assert q.fields[0].condition.op == "="
 
+    def test_valueless_field_is_preserved_as_empty_raw_condition(
+        self,
+    ) -> None:
+        """A valueless query field must not disappear before validation."""
+        q = JMDQueryParser().parse("#? X\nstatus:")
+
+        assert len(q.fields) == 1
+        assert q.fields[0].key == "status"
+        assert q.fields[0].condition.op == "="
+        assert q.fields[0].condition.values == [""]
+
+    def test_nested_valueless_field_is_preserved(self) -> None:
+        """An empty condition survives below a nested query scope."""
+        q = JMDQueryParser().parse("#? X\n## customer\nstatus:")
+
+        assert q.fields[0].fields[0].key == "status"
+        assert q.fields[0].fields[0].condition.values == [""]
+
+    def test_array_valueless_fields_are_preserved(self) -> None:
+        """Array-item fields retain explicit empty conditions at every depth."""
+        q = JMDQueryParser().parse(
+            "#? X\n## items[]\n- status:\n  category:",
+        )
+
+        item = q.fields[0].item_fields[0]
+        assert [field.key for field in item] == ["status", "category"]
+        assert [field.condition.values for field in item] == [[""], [""]]
+
     def test_gt_condition(self) -> None:
         """Test that a >N value produces a greater-than condition."""
         q = JMDQueryParser().parse("#? X\nscore: >50")
@@ -121,6 +149,12 @@ class TestQueryExecution:
         results = query("#? X\nstatus: active")
         assert all(r["status"] == "active" for r in results)
         assert len(results) == 2
+
+    def test_empty_raw_condition_is_not_dropped(self) -> None:
+        """A valueless field is an empty-string condition, never a no-op."""
+        records = [{"status": ""}, {"status": "active"}]
+
+        assert query("#? X\nstatus:", records) == [{"status": ""}]
 
     def test_gt_filter(self) -> None:
         """Test that a greater-than condition filters records correctly."""
