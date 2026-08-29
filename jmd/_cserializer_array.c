@@ -34,6 +34,8 @@ classify_array(PyObject *list)
     return 0;
 }
 
+
+
 int
 ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
 {
@@ -76,28 +78,39 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
             int first_scalar = 1;
             int wrote_nested = 0;
 
-            /* First pass: scalar fields (inline continuation) */
+            /* First pass: scalar fields, including blockquote strings. */
             ipos = 0;
             while (PyDict_Next(item, &ipos, &ikey, &ivalue)) {
+                Py_ssize_t klen;
+                const char *ks;
+                const char *vs = NULL;
+                Py_ssize_t vlen = 0;
+                int multiline;
+
                 if (PyDict_Check(ivalue) || PyList_Check(ivalue))
                     continue;
-
-                Py_ssize_t klen;
-                const char *ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
+                ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
                 if (!ks) return 0;
+                multiline = ser_is_blockquote_string(ivalue, &vs, &vlen);
+                if (multiline < 0) return 0;
 
                 if (first_scalar) {
-                    if (!outbuf_append(ob, "\n- ", 3)) return 0;
-                    if (!ser_write_key(ob, ks, klen)) return 0;
-                    if (!outbuf_append(ob, ": ", 2)) return 0;
-                    if (!ser_write_scalar(ob, ivalue)) return 0;
-                    first_scalar = 0;
+                    if (!outbuf_append(
+                        ob, multiline ? "\n-" : "\n- ",
+                        multiline ? 2 : 3
+                    )) return 0;
+                } else if (!outbuf_append(ob, "\n  ", 3)) {
+                    return 0;
+                }
+                if (!ser_write_key(ob, ks, klen)) return 0;
+                if (multiline) {
+                    if (!outbuf_putc(ob, ':')) return 0;
+                    if (!ser_write_multiline(ob, vs, vlen)) return 0;
                 } else {
-                    if (!outbuf_append(ob, "\n  ", 3)) return 0;
-                    if (!ser_write_key(ob, ks, klen)) return 0;
                     if (!outbuf_append(ob, ": ", 2)) return 0;
                     if (!ser_write_scalar(ob, ivalue)) return 0;
                 }
+                first_scalar = 0;
             }
 
             if (first_scalar) {
@@ -165,29 +178,45 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
             int first_scalar = 1;
             int has_nested = 0;
 
-            /* Emit scalar fields (with optional qualifier prefix on first) */
+            /* Emit scalar fields, including blockquote strings. */
             ipos = 0;
             while (PyDict_Next(item, &ipos, &ikey, &ivalue)) {
+                Py_ssize_t klen;
+                const char *ks;
+                const char *vs = NULL;
+                Py_ssize_t vlen = 0;
+                int multiline;
+
                 if (PyDict_Check(ivalue) || PyList_Check(ivalue)) {
                     has_nested = 1;
                     continue;
                 }
-                Py_ssize_t klen;
-                const char *ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
+                ks = PyUnicode_AsUTF8AndSize(ikey, &klen);
                 if (!ks) return 0;
+                multiline = ser_is_blockquote_string(ivalue, &vs, &vlen);
+                if (multiline < 0) return 0;
+
                 if (first_scalar) {
                     if (!outbuf_putc(ob, '\n')) return 0;
                     if (needs_qualifier) {
                         if (!outbuf_heading(ob, depth)) return 0;
                     }
-                    if (!outbuf_append(ob, "- ", 2)) return 0;
-                    first_scalar = 0;
-                } else {
-                    if (!outbuf_append(ob, "\n  ", 3)) return 0;
+                    if (!outbuf_append(
+                        ob, multiline ? "-" : "- ",
+                        multiline ? 1 : 2
+                    )) return 0;
+                } else if (!outbuf_append(ob, "\n  ", 3)) {
+                    return 0;
                 }
                 if (!ser_write_key(ob, ks, klen)) return 0;
-                if (!outbuf_append(ob, ": ", 2)) return 0;
-                if (!ser_write_scalar(ob, ivalue)) return 0;
+                if (multiline) {
+                    if (!outbuf_putc(ob, ':')) return 0;
+                    if (!ser_write_multiline(ob, vs, vlen)) return 0;
+                } else {
+                    if (!outbuf_append(ob, ": ", 2)) return 0;
+                    if (!ser_write_scalar(ob, ivalue)) return 0;
+                }
+                first_scalar = 0;
             }
             if (first_scalar) {
                 /* No scalar fields — emit bare bullet */

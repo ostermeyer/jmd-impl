@@ -43,6 +43,12 @@ int ser_write_quoted(OutBuf *output, const char *text, Py_ssize_t len);
 int ser_write_key(OutBuf *output, const char *text, Py_ssize_t len);
 int ser_write_scalar(OutBuf *output, PyObject *value);
 int ser_write_array_scalar(OutBuf *output, PyObject *value);
+/*
+ * Return 1 when a Unicode string uses blockquote form, 0 for a scalar
+ * rendered inline, and -1 with a Python exception on conversion failure.
+ */
+int ser_is_blockquote_string(
+    PyObject *value, const char **text, Py_ssize_t *length);
 int ser_write_multiline(
     OutBuf *output, const char *text, Py_ssize_t len);
 

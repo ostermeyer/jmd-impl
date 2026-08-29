@@ -54,12 +54,14 @@ ser_write_object_fields(OutBuf *ob, PyObject *dict, int depth)
             }
             else if (PyUnicode_Check(value)) {
                 Py_ssize_t vlen;
-                const char *vs = PyUnicode_AsUTF8AndSize(value, &vlen);
+                const char *vs = NULL;
+                int blockquote = ser_is_blockquote_string(
+                    value, &vs, &vlen);
 
-                if (!vs) return 0;
+                if (blockquote < 0) return 0;
                 if (!outbuf_putc(ob, '\n')) return 0;
                 if (!ser_write_key(ob, kstr, klen)) return 0;
-                if (memchr(vs, '\n', (size_t)vlen)) {
+                if (blockquote) {
                     if (!outbuf_putc(ob, ':')) return 0;
                     if (!ser_write_multiline(ob, vs, vlen)) return 0;
                 } else {

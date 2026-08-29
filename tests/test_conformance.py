@@ -22,9 +22,9 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 
 import pytest
 
@@ -35,7 +35,20 @@ ParserName = Literal["c", "py", "direct-py"]
 SerializerName = Literal["c", "py"]
 DocumentMode = Literal["data", "schema", "query", "delete"]
 ParseCallable = Callable[[str], jmd.Envelope]
-SerializeCallable = Callable[[jmd.Envelope], str]
+
+
+class SerializeCallable(Protocol):
+    """Public serializer surface used by the fixture harness."""
+
+    def __call__(
+        self,
+        obj: jmd.Envelope,
+        label: str = "Document",
+        frontmatter: dict[str, object] | None = None,
+        *,
+        blockquote_paths: Collection[str] | None = None,
+    ) -> str:
+        """Serialize a fixture envelope with optional render controls."""
 
 _REQUIRED_DIRECTORIES = frozenset(
     {"data", "delete", "query", "tolerance", "must-fail"}
@@ -104,21 +117,34 @@ def _validate_fixture_layout(root: pathlib.Path) -> None:
                 path.name.removesuffix(".error.json")
                 for path in mode_dir.glob("*.error.json")
             }
+            render_stems: set[str] = set()
         else:
-            oracle_stems = {path.stem for path in mode_dir.glob("*.json")}
+            oracle_stems = {
+                path.stem
+                for path in mode_dir.glob("*.json")
+                if not path.name.endswith(".render.json")
+            }
+            render_stems = {
+                path.name.removesuffix(".render.json")
+                for path in mode_dir.glob("*.render.json")
+            }
 
         missing_oracles = sorted(jmd_stems - oracle_stems)
         missing_inputs = sorted(oracle_stems - jmd_stems)
-        if missing_oracles or missing_inputs:
+        missing_render_inputs = sorted(render_stems - jmd_stems)
+        if missing_oracles or missing_inputs or missing_render_inputs:
             details: list[str] = []
             if missing_oracles:
                 details.append(f"missing oracle for {missing_oracles!r}")
             if missing_inputs:
                 details.append(f"missing JMD for {missing_inputs!r}")
+            if missing_render_inputs:
+                details.append(
+                    f"missing JMD for render controls {missing_render_inputs!r}"
+                )
             raise FileNotFoundError(
                 f"incomplete fixtures in {mode_dir}: " + "; ".join(details)
             )
-
 
 def _collect_pairs(
     root: pathlib.Path,
@@ -181,6 +207,28 @@ def _load_envelope_oracle(
         value=expected,
         frontmatter=frontmatter,
     )
+
+def _load_render_controls(jmd_path: pathlib.Path) -> tuple[str, ...]:
+    """Load optional generator-only controls for one canonical fixture."""
+    render_path = jmd_path.with_suffix(".render.json")
+    if not render_path.is_file():
+        return ()
+
+    payload = json.loads(render_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or set(payload) != {"blockquote-paths"}:
+        raise ValueError(
+            f"invalid render controls in {render_path}: "
+            "expected only blockquote-paths"
+        )
+    raw_paths = payload["blockquote-paths"]
+    if not isinstance(raw_paths, list) or not all(
+        isinstance(path, str) for path in raw_paths
+    ):
+        raise ValueError(
+            f"invalid blockquote-paths in {render_path}: expected string list"
+        )
+    return tuple(raw_paths)
+
 
 
 _FIXTURES_ROOT = _fixtures_root()
@@ -278,7 +326,10 @@ def test_serialize(
 ) -> None:
     """Serialize an independent body oracle to canonical bytes."""
     jmd_text, oracle = _load_envelope_oracle(mode, jmd_path, json_path)
-    output = serializer_surface.serialize(oracle)
+    output = serializer_surface.serialize(
+        oracle,
+        blockquote_paths=_load_render_controls(jmd_path),
+    )
     assert output + "\n" == jmd_text
 
 
@@ -296,7 +347,10 @@ def test_roundtrip(
 ) -> None:
     """Exercise every independent parser/serializer combination."""
     jmd_text, oracle = _load_envelope_oracle(mode, jmd_path, json_path)
-    serialized = serializer_surface.serialize(oracle)
+    serialized = serializer_surface.serialize(
+        oracle,
+        blockquote_paths=_load_render_controls(jmd_path),
+    )
     reparsed = parser_surface.parse(serialized)
     assert serialized + "\n" == jmd_text
     assert reparsed == oracle

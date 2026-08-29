@@ -57,6 +57,44 @@ ser_needs_quote(const char *s, Py_ssize_t len)
     return 0;
 }
 
+/*
+ * Decide whether a string needs JMD's blockquote form.
+ *
+ * Besides real newlines, the private _jmd_blockquote marker is attached by
+ * the Python public API for its output-only render selection. It never
+ * appears in parsed JMD values.
+ */
+int
+ser_is_blockquote_string(
+    PyObject *value, const char **text, Py_ssize_t *length)
+{
+    PyObject *marker;
+    int selected;
+
+    if (!PyUnicode_Check(value))
+        return 0;
+    *text = PyUnicode_AsUTF8AndSize(value, length);
+    if (!*text)
+        return -1;
+    if (memchr(*text, '\n', (size_t)*length))
+        return 1;
+    if (PyUnicode_CheckExact(value))
+        return 0;
+
+    marker = PyObject_GetAttrString(value, "_jmd_blockquote");
+    if (!marker) {
+        if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+            PyErr_Clear();
+            return 0;
+        }
+        return -1;
+    }
+    selected = PyObject_IsTrue(marker);
+    Py_DECREF(marker);
+    return selected;
+}
+
+
 /* Check if a key can be bare (only [a-zA-Z0-9_-]). */
 static int
 ser_key_is_bare(const char *s, Py_ssize_t len)

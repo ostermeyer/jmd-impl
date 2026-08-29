@@ -19,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 from ._cli import (
@@ -59,7 +60,11 @@ from ._schema import (
     SchemaObject,
     SchemaRef,
 )
-from ._serializer import JMDSerializer, validate_label
+from ._serializer import (
+    JMDSerializer,
+    select_blockquote_paths,
+    validate_label,
+)
 from ._streaming import (
     JMDStreamParser,
     StreamEvent,
@@ -153,34 +158,23 @@ def serialize(
     obj: Envelope | Any,
     label: str = "Document",
     frontmatter: dict[str, Any] | None = None,
+    *,
+    blockquote_paths: Collection[str] | None = None,
 ) -> str:
-    """Serialize an :class:`Envelope` (canonical) or a value to JMD.
+    """Serialize an envelope or a value to JMD.
 
-    Canonical form per §3.6.3 takes an :class:`Envelope` directly::
-
-        serialize(envelope) -> str
-
-    For an :class:`Envelope` input, the ``label`` and ``frontmatter``
-    keyword arguments are ignored — they are taken from the envelope.
-
-    Convenience form for callers that have not adopted the envelope::
-
-        serialize(value, label="Order", frontmatter={"page": 1})
-
-    The mode marker may be carried as a prefix on ``label``
-    (e.g. ``"- Order"`` for delete, ``"? Order"`` for query,
-    ``"! Order"`` for schema); plain data documents pass the label
-    unadorned.
+    An envelope supplies its own label and frontmatter. The optional
+    blockquote_paths control affects body rendering only: matching string
+    fields use JMD's existing blockquote form even if they are one line. It is
+    not represented in the parsed value or in JMD syntax.
 
     Args:
-        obj: An :class:`Envelope` or a raw body value (``dict``,
-            ``list``, or scalar).
-        label: Root heading label, optionally mode-prefixed
-            (convenience form only).
-        frontmatter: Optional mapping of frontmatter keys to values,
-            emitted above the root heading separated by one blank line
-            (§3.5). A value of ``True`` produces a bare key line.
-            (Convenience form only.)
+        obj: An Envelope or a raw body value.
+        label: Root heading label, optionally mode-prefixed.
+        frontmatter: Optional mapping emitted above the root heading.
+        blockquote_paths: JSON-Pointer-like paths of body string fields to
+            render in blockquote form. Object-key segments use JSON Pointer
+            escaping; a star segment matches one array item.
 
     Returns:
         A JMD document string.
@@ -190,8 +184,14 @@ def serialize(
             obj.value,
             label=mode_to_label_prefix(obj.mode) + obj.label,
             frontmatter=obj.frontmatter or None,
+            blockquote_paths=blockquote_paths,
         )
-    return _serialize_internal(obj, label=label, frontmatter=frontmatter)
+    return _serialize_internal(
+        obj,
+        label=label,
+        frontmatter=frontmatter,
+        blockquote_paths=blockquote_paths,
+    )
 
 
 def _serialize_internal(
@@ -199,15 +199,17 @@ def _serialize_internal(
     *,
     label: str,
     frontmatter: dict[str, Any] | None,
+    blockquote_paths: Collection[str] | None,
 ) -> str:
-    """Shared body for :func:`serialize` (both envelope and convenience)."""
+    """Shared body for serialize in envelope and convenience forms."""
     # D11: validate/normalize label at the public entry point so both
     # the C-accelerated and pure-Python paths behave consistently.
     label = validate_label(label, root_is_array=isinstance(data, list))
+    rendered_data = select_blockquote_paths(data, blockquote_paths)
     if _HAS_CSERIALIZER:
-        body = str(_c_serialize(data, label))
+        body = str(_c_serialize(rendered_data, label))
     else:
-        body = JMDSerializer().serialize(data, label=label)
+        body = JMDSerializer().serialize(rendered_data, label=label)
     if not frontmatter:
         return body
     from ._scalars import quote_key, serialize_scalar

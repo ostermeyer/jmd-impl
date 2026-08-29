@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from typing import Any, cast
 
 from ._scalars import quote_key, serialize_scalar
@@ -83,6 +84,154 @@ def _serialize_array_scalar(value: Any) -> str:
     return serialize_scalar(value)
 
 
+class _BlockquoteString(str):
+    """Internal marker selecting JMD's blockquote rendering form."""
+
+    _jmd_blockquote = True
+
+
+PathSegment = tuple[str, bool]
+BlockquotePath = tuple[str, ...]
+
+
+def _unescape_pointer_segment(segment: str, path: str) -> str:
+    """Return one JSON-Pointer segment after validating its escapes."""
+    result: list[str] = []
+    index = 0
+    while index < len(segment):
+        character = segment[index]
+        if character != "~":
+            result.append(character)
+            index += 1
+            continue
+        if index + 1 == len(segment) or segment[index + 1] not in "01":
+            raise ValueError(f"invalid JSON Pointer escape in {path!r}")
+        result.append("~" if segment[index + 1] == "0" else "/")
+        index += 2
+    return "".join(result)
+
+
+def normalize_blockquote_paths(
+    paths: Collection[str] | None,
+) -> frozenset[BlockquotePath]:
+    """Validate caller-selected, JSON-Pointer-like render paths.
+
+    Args:
+        paths: Paths rooted at the data value. Object-key segments use JSON
+            Pointer escaping. A star segment matches exactly one array item.
+
+    Returns:
+        Immutable decoded path segments.
+
+    Raises:
+        TypeError: If a path is not a string.
+        ValueError: If a path is root-relative or has an invalid escape.
+    """
+    if paths is None:
+        return frozenset()
+
+    normalized: set[BlockquotePath] = set()
+    for path in paths:
+        if not isinstance(path, str):
+            raise TypeError("blockquote paths must be strings")
+        if not path.startswith("/"):
+            raise ValueError(
+                "blockquote paths must be non-root JSON Pointer paths"
+            )
+        normalized.add(
+            tuple(
+                _unescape_pointer_segment(segment, path)
+                for segment in path[1:].split("/")
+            )
+        )
+    return frozenset(normalized)
+
+
+def _format_blockquote_path(path: BlockquotePath) -> str:
+    """Return an escaped path for an actionable error message."""
+    return "/" + "/".join(
+        segment.replace("~", "~0").replace("/", "~1")
+        for segment in path
+    )
+
+
+def select_blockquote_paths(
+    data: Any,
+    paths: Collection[str] | None,
+) -> Any:
+    """Mark selected object string fields for blockquote rendering.
+
+    The markers exist only during generation. They are never part of the JMD
+    value model and are not observable through parsing.
+
+    Args:
+        data: JMD value to prepare for generation.
+        paths: Output-only paths of object string fields.
+
+    Returns:
+        A structurally equivalent value with internal string markers.
+
+    Raises:
+        ValueError: If a path does not identify an object string field.
+    """
+    selected_paths = normalize_blockquote_paths(paths)
+    if not selected_paths:
+        return data
+
+    matched: set[BlockquotePath] = set()
+
+    def path_matches(
+        selected: BlockquotePath, current: tuple[PathSegment, ...]
+    ) -> bool:
+        """Return whether a control path matches the current data value."""
+        return len(selected) == len(current) and all(
+            expected == actual
+            or (expected == "*" and is_array_index)
+            for expected, (actual, is_array_index) in zip(
+                selected, current, strict=True
+            )
+        )
+
+    def transform(value: Any, current: tuple[PathSegment, ...]) -> Any:
+        """Copy containers and mark a selected leaf."""
+        matching = next(
+            (
+                selected
+                for selected in selected_paths
+                if path_matches(selected, current)
+            ),
+            None,
+        )
+        if matching is not None:
+            if not isinstance(value, str) or current[-1][1]:
+                raise ValueError(
+                    "blockquote path must identify an object string field: "
+                    f"{_format_blockquote_path(matching)}"
+                )
+            matched.add(matching)
+            return _BlockquoteString(value)
+        if isinstance(value, dict):
+            return {
+                key: transform(child, current + ((key, False),))
+                for key, child in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                transform(child, current + ((str(index), True),))
+                for index, child in enumerate(value)
+            ]
+        return value
+
+    prepared = transform(data, ())
+    unmatched = selected_paths - matched
+    if unmatched:
+        raise ValueError(
+            "blockquote path does not identify an object string field: "
+            f"{_format_blockquote_path(next(iter(unmatched)))}"
+        )
+    return prepared
+
+
 class JMDSerializer:
     r"""Serializes Python dicts/lists to JMD v0.3.5 format.
 
@@ -153,7 +302,9 @@ class JMDSerializer:
                     lines.append("")
                     lines.append(f"{self._heading(depth + 1)}{k}[]")
                     self._write_array_items(value, lines, depth + 1)
-                elif isinstance(value, str) and "\n" in value:
+                elif isinstance(value, str) and (
+                    "\n" in value or isinstance(value, _BlockquoteString)
+                ):
                     lines.append(f"{k}:")
                     self._write_multiline(value, lines)
                 else:
@@ -190,16 +341,26 @@ class JMDSerializer:
                     if isinstance(v, (dict, list))
                 }
                 if scalar_fields:
-                    # First field on the '- ' line, rest indented.
                     first = True
                     for k, v in scalar_fields.items():
-                        sv = serialize_scalar(v)
                         qk = quote_key(k)
-                        if first:
-                            lines.append(f"- {qk}: {sv}")
-                            first = False
+                        is_blockquote = isinstance(v, _BlockquoteString) or (
+                            isinstance(v, str) and "\n" in v
+                        )
+                        if is_blockquote:
+                            if first:
+                                lines.append("-")
+                            lines.append(f"  {qk}:")
+                            self._write_multiline(v, lines)
+                        elif first:
+                            lines.append(
+                                f"- {qk}: {serialize_scalar(v)}"
+                            )
                         else:
-                            lines.append(f"  {qk}: {sv}")
+                            lines.append(
+                                f"  {qk}: {serialize_scalar(v)}"
+                            )
+                        first = False
                 else:
                     lines.append("-")
                 if nested_fields:
@@ -245,13 +406,25 @@ class JMDSerializer:
                     if het_scalar_fields:
                         first = True
                         for k, v in het_scalar_fields.items():
-                            sv = serialize_scalar(v)
                             qk = quote_key(k)
-                            if first:
-                                lines.append(f"{pfx}- {qk}: {sv}")
-                                first = False
+                            is_blockquote = (
+                                isinstance(v, _BlockquoteString)
+                                or (isinstance(v, str) and "\n" in v)
+                            )
+                            if is_blockquote:
+                                if first:
+                                    lines.append(f"{pfx}-")
+                                lines.append(f"  {qk}:")
+                                self._write_multiline(v, lines)
+                            elif first:
+                                lines.append(
+                                    f"{pfx}- {qk}: {serialize_scalar(v)}"
+                                )
                             else:
-                                lines.append(f"  {qk}: {sv}")
+                                lines.append(
+                                    f"  {qk}: {serialize_scalar(v)}"
+                                )
+                            first = False
                     else:
                         lines.append(f"{pfx}-")
                     if het_nested_fields:
