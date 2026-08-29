@@ -4,6 +4,22 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.10.0] — 2026-08-29
+
+### Added
+
+The public serializer accepts output-only `blockquote_paths` controls. They
+select JMD's existing blockquote representation for ordinary one-line string
+fields without introducing a rich-text value type.
+
+### Fixed
+
+- The C serializer now emits multiline string fields in array records in the
+  canonical blockquote form.
+- The C and Python serializer paths both honour selected blockquote fields.
+- The vendored conformance suite now covers explicit blockquote rendering and
+  multiline array-record fields.
+
 ## [0.9.2] — 2026-08-27
 
 ### Fixed
