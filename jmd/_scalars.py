@@ -162,7 +162,7 @@ def _needs_quote(s: str) -> bool:
         return True
     if s[:1].isspace() or s[-1:].isspace() or "\r" in s:
         return True
-    if s == "-":
+    if s in {"-", "|", ">"}:
         return True
     if s in ("null", "true", "false"):
         return True

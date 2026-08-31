@@ -4,6 +4,7 @@
 import pytest
 
 from jmd import (
+    JMDParser,
     JMDSchema,
     JMDSchemaParser,
     SchemaArray,
@@ -124,6 +125,29 @@ class TestSchemaParsing:
         assert isinstance(arr, SchemaArray)
         assert arr.item_type == "object"
         assert any(f.key == "id" for f in arr.item_fields)
+
+    def test_generic_nested_array_is_rejected_with_guidance(self) -> None:
+        """Reject generic schema metadata from the legacy type dialect."""
+        source = """\
+#! Field
+## prefixes[]
+- prefix: @
+
+### applications[]
+- Members
+##
+- prefix: #
+"""
+
+        envelope = JMDParser().parse(source)
+
+        assert envelope.mode == "schema"
+        assert envelope.value["prefixes"] == [
+            {"prefix": "@", "applications": ["Members"]},
+            {"prefix": "#"},
+        ]
+        with pytest.raises(ValueError, match="typed array declaration"):
+            parse_schema(source)
 
 
 class TestJsonSchemaExport:

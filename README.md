@@ -50,7 +50,14 @@ print(serialize(data, label="Order"))
 ## Document Modes
 
 ```python
-from jmd import jmd_mode, JMDQueryParser, JMDSchemaParser, JMDDeleteParser, parse_error
+from jmd import (
+    JMDDeleteParser,
+    JMDParser,
+    JMDQueryParser,
+    JMDSchemaParser,
+    jmd_mode,
+    parse_error,
+)
 
 # Detect mode without full parse
 mode = jmd_mode(source)   # 'data' | 'query' | 'schema' | 'delete'
@@ -58,8 +65,13 @@ mode = jmd_mode(source)   # 'data' | 'query' | 'schema' | 'delete'
 # Query by Example (#?)
 query = JMDQueryParser().parse("#? Order\nstatus: pending")
 
-# Schema (#!)
-schema = JMDSchemaParser().parse("#! Order\nid: integer readonly\nstatus: string")
+# Schema (#!) — canonical structural parser; values remain raw strings
+schema = JMDParser().parse("#! Order\nid: integer readonly\nstatus: string")
+
+# Optional legacy type-expression dialect
+typed_schema = JMDSchemaParser().parse(
+    "#! Order\nid: integer readonly\nstatus: string"
+)
 
 # Delete (#-)
 delete = JMDDeleteParser().parse("#- Order\nid: 42")

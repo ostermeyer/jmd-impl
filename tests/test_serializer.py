@@ -3,7 +3,7 @@
 
 from typing import Any
 
-from jmd import JMDSerializer
+from jmd import JMDParser, JMDSerializer
 
 
 def serialize(data: Any, label: str = "X") -> str:
@@ -59,6 +59,16 @@ class TestScalarSerialization:
         out = serialize({"v": "line1\nline2"})
         assert "> line1" in out
         assert "> line2" in out
+
+    def test_structural_scalar_tokens_are_quoted_and_round_trip(self) -> None:
+        """Quote tokens that otherwise start an array or blockquote form."""
+        data = {"pipe": "|", "blockquote": ">"}
+
+        rendered = serialize(data)
+
+        assert 'pipe: "|"' in rendered
+        assert 'blockquote: ">"' in rendered
+        assert JMDParser().parse(rendered).value == data
 
 
 class TestRootHeading:

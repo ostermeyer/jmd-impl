@@ -230,7 +230,13 @@ def _make_schema_field(
 
 
 class JMDSchemaParser:
-    """Parses JMD schema documents (#!) using the v0.3.5 heading-scope model."""
+    """Parse the legacy JMD type-expression dialect.
+
+    The canonical :class:`JMDParser` parses every structurally valid `#!`
+    document and preserves its string leaves. This helper additionally
+    interprets the optional legacy type-expression dialect for applications
+    that want its `JMDSchema` AST.
+    """
 
     def __init__(self) -> None:
         self._lines: list[Line] = []
@@ -331,6 +337,12 @@ class JMDSchemaParser:
 
                 # Object: key (no `: ` after the heading label)
                 else:
+                    if content.endswith("[]"):
+                        raise ValueError(
+                            "JMDSchemaParser requires a typed array "
+                            "declaration such as 'items[]: object'; parse "
+                            "generic schema documents with JMDParser"
+                        )
                     key = parse_key(content)
                     sub_fields = self._parse_schema_body(depth + 1)
                     fields.append(SchemaObject(

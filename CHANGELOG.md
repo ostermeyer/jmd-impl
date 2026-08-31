@@ -4,6 +4,22 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.10.1] — 2026-08-31
+
+### Fixed
+
+- The serializer now JSON-quotes standalone `|` and `>` scalar values, so
+  both round-trip instead of being silently interpreted as block-scalar
+  markers.
+- `JMDSchemaParser` now rejects an untyped array heading with a precise
+  dialect error instead of crashing on generic nested schema metadata. Use
+  `JMDParser` for the canonical, structurally complete `#!` parser.
+
+### Changed
+
+The README now distinguishes the canonical structural schema parser from the
+optional legacy type-expression dialect.
+
 ## [0.10.0] — 2026-08-29
 
 ### Added
