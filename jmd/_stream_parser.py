@@ -423,6 +423,15 @@ class JMDStreamParser:
             if field_parts is None:
                 self._raise_structure(line)
         if field_parts is not None:
+            # A bare field belongs only to an object or the current object
+            # array item. A root/child array has no key-owning scope, so
+            # accepting it would diverge from batch parsing and lose input.
+            if not self._scopes or self._scopes[-1].kind == "array":
+                raise JMDParseError(
+                    kind="prose_in_body",
+                    line=line.number,
+                    key="",
+                )
             key_raw, value_raw = field_parts
             self._emit_field(
                 parse_key(key_raw),

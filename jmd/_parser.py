@@ -105,6 +105,30 @@ class JMDParser:
         value = body_parser.parse(root_is_array=root_is_array)
         self._pos = body_parser.pos
 
+        # A completed root body may leave only blank decoration.  Recursive
+        # descent deliberately returns at a parent boundary, but the root has
+        # no parent to consume a remaining line.  Returning the partial value
+        # here would silently discard caller input.
+        while (
+            self._pos < len(self._lines)
+            and self._lines[self._pos].heading_depth == -1
+        ):
+            self._pos += 1
+        if self._pos < len(self._lines):
+            leftover = self._lines[self._pos]
+            error_kind = "prose_in_body"
+            if leftover.heading_depth == 1 and leftover.content:
+                raw = leftover.raw_text.lstrip(" \t")
+                if raw.startswith(("#? ", "#! ", "#- ")):
+                    error_kind = "mode_marker_mid_document"
+                else:
+                    error_kind = "second_root_heading"
+            raise JMDParseError(
+                kind=error_kind,
+                line=leftover.number,
+                key="",
+            )
+
         return Envelope(
             mode=mode,
             label=label,

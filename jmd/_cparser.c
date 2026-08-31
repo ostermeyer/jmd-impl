@@ -127,6 +127,11 @@ jmd_parse(PyObject *self, PyObject *args)
                      && (leftover->raw[0] == ' '
                          || leftover->raw[0] == '\t'))
                 error_kind = "prose_in_body";
+            else
+                /* The root has no parent scope that could consume this
+                 * non-structural line.  Returning the parsed prefix would
+                 * lose caller input, so fail with the shared prose error. */
+                error_kind = "prose_in_body";
 
             if (error_kind != NULL) {
                 raise_structural_parse_error(

@@ -401,6 +401,17 @@ class TestJMDStreamParser:
         assert exc.value.kind == "second_root_heading"
         assert exc.value.line == 3
 
+    def test_rejects_bare_field_at_root_array(self) -> None:
+        """Reject a root-array field instead of discarding caller input."""
+        parser = JMDStreamParser()
+        parser.process_line("# Records[]")
+
+        with pytest.raises(JMDParseError) as exc:
+            parser.process_line("status: active")
+
+        assert exc.value.kind == "prose_in_body"
+        assert exc.value.line == 2
+
     def test_finish_without_root_fails(self) -> None:
         """Match the batch parser when EOF arrives before a root heading."""
         parser = JMDStreamParser()

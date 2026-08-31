@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for JMD Query by Example (spec § 13)."""
 
+import json
 from typing import Any
+
+import pytest
 
 from jmd import JMDQueryExecutor, JMDQueryParser
 
@@ -109,6 +112,48 @@ class TestQueryParsing:
         assert cond.op == "regex"
         assert cond.values[0] == "^A\\d+"
 
+    @pytest.mark.parametrize("condition", [
+        "~Beratung",
+        "!~Corp",
+        "> 50",
+        ">= 50",
+        "< 50",
+        "<= 50",
+        "!true",
+        "active|pending",
+        "?",
+        "?: ?",
+        r"~re:^A\d+",
+    ])
+    def test_quoted_scalar_preserves_qbe_condition(
+        self,
+        condition: str,
+    ) -> None:
+        """Treat quotes as JMD scalar encoding, not QBE operator escaping."""
+        parser = JMDQueryParser()
+        bare = parser.parse(f"#? X\nvalue: {condition}").fields[0].condition
+        quoted = parser.parse(
+            f"#? X\nvalue: {json.dumps(condition)}"
+        ).fields[0].condition
+
+        assert quoted == bare
+
+    def test_quoted_type_ambiguous_scalar_remains_string(self) -> None:
+        """Retain JMD explicit string distinction for type ambiguity.
+
+        Quoting is still required when a caller means a string rather
+        than a scalar value such as a Boolean.
+        """
+        parser = JMDQueryParser()
+        bare = parser.parse("#? X\nvalue: true").fields[0].condition
+        quoted = parser.parse(
+            '#? X\nvalue: "true"'
+        ).fields[0].condition
+
+        assert bare.op == quoted.op == "="
+        assert bare.values == [True]
+        assert quoted.values == ["true"]
+
     def test_regex_autodetect_removed(self) -> None:
         """Regression: dot in a value is literal, not a regex metacharacter.
 
@@ -175,6 +220,18 @@ class TestQueryExecution:
         """Test that a contains condition filters records by substring match."""
         results = query("#? X\ntag: ~vip")
         assert all("vip" in r["tag"] for r in results)
+
+    def test_quoted_contains_filter_matches_unquoted_filter(self) -> None:
+        """Execute quoted and bare contains conditions with the same result."""
+        records = [
+            {"name": "Beratung Nord"},
+            {"name": "Operations"},
+        ]
+
+        bare = query("#? X\nname: ~Beratung", records)
+        quoted = query('#? X\nname: "~Beratung"', records)
+
+        assert quoted == bare == [{"name": "Beratung Nord"}]
 
     def test_alternation_filter(self) -> None:
         """Test that an alternation condition matches any listed value."""

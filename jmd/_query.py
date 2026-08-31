@@ -112,8 +112,17 @@ def _indented_query_field(line: Line) -> QueryField | None:
 
 
 def _parse_condition(raw: str) -> Condition:
-    """Parse a condition string into a Condition object."""
+    """Parse one decoded JMD scalar using the adopted QBE dialect."""
     raw = raw.strip()
+    scalar = parse_scalar(raw)
+    if not isinstance(scalar, str):
+        return Condition(op="=", values=[scalar])
+
+    # JMD quoting is a scalar-encoding concern, not an escape hatch for
+    # QBE operators. Decode it before inspecting the adopted dialect so
+    # `~Berlin` and `"~Berlin"` have identical conditions. Non-string
+    # scalars returned above retain JMD's intentional type distinction.
+    raw = scalar
     if raw == "?":
         return Condition(op="?", values=[])
     if raw == "?: ?":
@@ -140,9 +149,15 @@ def _parse_condition(raw: str) -> Condition:
     if raw.startswith("~"):
         return Condition(op="~", values=[parse_scalar(raw[1:].strip())])
 
-    parts = [parse_scalar(p.strip()) for p in raw.split("|")]
-    op = "=" if len(parts) == 1 else "|"
-    return Condition(op=op, values=parts)
+    parts = raw.split("|")
+    if len(parts) == 1:
+        # The decoded scalar is already the JMD value. Re-parsing it would
+        # turn an explicitly quoted string such as `"true"` into a Boolean.
+        return Condition(op="=", values=[scalar])
+    return Condition(
+        op="|",
+        values=[parse_scalar(part.strip()) for part in parts],
+    )
 
 
 class JMDQueryParser:
