@@ -4,6 +4,18 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.10.2] — 2026-08-31
+
+### Fixed
+
+- Parsers now refuse a bare scalar mapping after a root array instead of
+  silently returning an empty array. Python batch, C batch, and streaming
+  parsers consistently report `prose_in_body`; the Conformance Test Suite
+  covers the case.
+- `JMDQueryParser` now decodes JMD scalar quoting before interpreting its QBE
+  operator dialect. Quoted and unquoted unambiguous operator expressions have
+  identical semantics, while quoted type-like literals remain strings.
+
 ## [0.10.1] — 2026-08-31
 
 ### Fixed
