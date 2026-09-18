@@ -14,7 +14,13 @@
 /* Scalar serialization                                                */
 /* ------------------------------------------------------------------ */
 
-/* Check if a bare string needs quoting. */
+/*
+ * Decide whether a bare string would change type or meaning when parsed.
+ *
+ * s is borrowed, NUL-terminated UTF-8 from PyUnicode_AsUTF8AndSize; len is
+ * its byte length, excluding the terminator. Embedded NULs cannot make a
+ * numeric prefix count as a complete value. No ownership is transferred.
+ */
 int
 ser_needs_quote(const char *s, Py_ssize_t len)
 {
@@ -27,8 +33,8 @@ ser_needs_quote(const char *s, Py_ssize_t len)
         return 1;
     if (len == 5 && memcmp(s, "false", 5) == 0)
         return 1;
-    /* Lone dash */
-    if (len == 1 && s[0] == '-')
+    /* Standalone structural markers need literal string quoting. */
+    if (len == 1 && (s[0] == '-' || s[0] == '|' || s[0] == '>'))
         return 1;
     /* Starts with structural prefix: "# " or "- " */
     if (len >= 2 && ((s[0] == '#' && s[1] == ' ') || (s[0] == '-' && s[1] == ' ')))
@@ -41,18 +47,17 @@ ser_needs_quote(const char *s, Py_ssize_t len)
         || memchr(s, '\r', (size_t)len)
         || memchr(s, '\t', (size_t)len))
         return 1;
-    /* Looks like a number? Try parsing as double. */
+    /*
+     * Inspect the complete string, with no fixed-size scratch buffer.
+     * Range overflow/underflow still identifies numeric syntax: quoting
+     * protects the original string regardless of floating-point range.
+     */
     {
-        char tmp[64];
-        if (len < 63) {
-            memcpy(tmp, s, (size_t)len);
-            tmp[len] = '\0';
-            char *end;
-            errno = 0;
-            strtod(tmp, &end);
-            if (end == tmp + len && errno == 0)
-                return 1;
-        }
+        char *end;
+
+        strtod(s, &end);
+        if (end == s + len)
+            return 1;
     }
     return 0;
 }
@@ -62,7 +67,13 @@ ser_needs_quote(const char *s, Py_ssize_t len)
  *
  * Besides real newlines, the private _jmd_blockquote marker is attached by
  * the Python public API for its output-only render selection. It never
- * appears in parsed JMD values.
+ * appears in parsed JMD values. Both requested and automatic blockquotes
+ * must preserve data under the parser's whitespace normalization.
+ *
+ * value is borrowed. On a string result, text borrows value's UTF-8 buffer
+ * and length receives its byte length; both remain valid while value lives.
+ * Return 1 for a lossless blockquote, 0 for scalar form/non-string, or -1
+ * with an exception set. No reference is retained.
  */
 int
 ser_is_blockquote_string(
@@ -70,12 +81,32 @@ ser_is_blockquote_string(
 {
     PyObject *marker;
     int selected;
+    Py_ssize_t chars;
 
     if (!PyUnicode_Check(value))
         return 0;
     *text = PyUnicode_AsUTF8AndSize(value, length);
     if (!*text)
         return -1;
+    /* Ordinary one-line strings never need a blockquote scan. */
+    if (PyUnicode_CheckExact(value)
+        && !memchr(*text, '\n', (size_t)*length))
+        return 0;
+    chars = PyUnicode_GetLength(value);
+    if (chars == 0
+        || Py_UNICODE_ISSPACE(PyUnicode_ReadChar(value, 0))
+        || Py_UNICODE_ISSPACE(PyUnicode_ReadChar(value, chars - 1)))
+        return 0;
+    for (Py_ssize_t i = 0; i < chars; i++) {
+        Py_UCS4 character = PyUnicode_ReadChar(value, i);
+
+        /* CR is transport syntax; spaces before LF would be trimmed. */
+        if (character == '\r'
+            || (character == '\n' && i > 0
+                && PyUnicode_ReadChar(value, i - 1) != '\n'
+                && Py_UNICODE_ISSPACE(PyUnicode_ReadChar(value, i - 1))))
+            return 0;
+    }
     if (memchr(*text, '\n', (size_t)*length))
         return 1;
     if (PyUnicode_CheckExact(value))
@@ -203,8 +234,7 @@ ser_write_scalar(OutBuf *ob, PyObject *value)
         Py_ssize_t slen;
         const char *s = PyUnicode_AsUTF8AndSize(value, &slen);
         if (!s) return 0;
-        /* Multiline strings are handled by caller (blockquote mode).
-         * Here we only handle single-line strings. */
+        /* Unsafe multiline values also arrive here for escaped quoting. */
         if (ser_needs_quote(s, slen))
             return ser_write_quoted(ob, s, slen);
         return outbuf_append(ob, s, slen);

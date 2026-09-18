@@ -4,6 +4,24 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.10.3] — 2026-09-18
+
+### Fixed
+
+- The C serializer now quotes standalone `|` and `>` strings, completing
+  the Python-side fix from 0.10.1.
+- Numeric-looking strings no longer escape C quoting at 63 or more bytes.
+  Floating-point overflow and underflow also no longer suppress quoting.
+- Both serializers preserve significant multiline whitespace and CR/CRLF
+  content by using quoted, escaped strings whenever blockquote normalization
+  would change the value. This applies to root/nested fields, array records,
+  and explicit `blockquote_paths`; ordinary safe blockquotes stay readable.
+- The C serializer now separates a leading blockquote field from its array
+  record opener, rather than emitting an invalid joined token such as
+  `-value:`. Homogeneous and mixed arrays use the same valid record shape.
+- Regression coverage checks both serializers against both parsers, across
+  collection positions, and exercises generated whitespace combinations.
+
 ## [0.10.2] — 2026-08-31
 
 ### Fixed

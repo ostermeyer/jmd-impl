@@ -165,8 +165,9 @@ def serialize(
 
     An envelope supplies its own label and frontmatter. The optional
     blockquote_paths control affects body rendering only: matching string
-    fields use JMD's existing blockquote form even if they are one line. It is
-    not represented in the parsed value or in JMD syntax.
+    fields prefer JMD's existing blockquote form even if they are one line.
+    Values whose whitespace would change use quoted, escaped strings instead.
+    The control is not represented in the parsed value or in JMD syntax.
 
     Args:
         obj: An Envelope or a raw body value.

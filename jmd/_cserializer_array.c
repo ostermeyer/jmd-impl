@@ -94,10 +94,14 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 multiline = ser_is_blockquote_string(ivalue, &vs, &vlen);
                 if (multiline < 0) return 0;
 
+                /*
+                 * A leading blockquote field needs a bare record opener
+                 * followed by its indented key, just like later fields.
+                 */
                 if (first_scalar) {
                     if (!outbuf_append(
-                        ob, multiline ? "\n-" : "\n- ",
-                        multiline ? 2 : 3
+                        ob, multiline ? "\n-\n  " : "\n- ",
+                        multiline ? 5 : 3
                     )) return 0;
                 } else if (!outbuf_append(ob, "\n  ", 3)) {
                     return 0;
@@ -196,14 +200,18 @@ ser_write_array_items(OutBuf *ob, PyObject *list, int depth)
                 multiline = ser_is_blockquote_string(ivalue, &vs, &vlen);
                 if (multiline < 0) return 0;
 
+                /*
+                 * A leading blockquote field needs a bare record opener
+                 * followed by its indented key, just like later fields.
+                 */
                 if (first_scalar) {
                     if (!outbuf_putc(ob, '\n')) return 0;
                     if (needs_qualifier) {
                         if (!outbuf_heading(ob, depth)) return 0;
                     }
                     if (!outbuf_append(
-                        ob, multiline ? "-" : "- ",
-                        multiline ? 1 : 2
+                        ob, multiline ? "-\n  " : "- ",
+                        multiline ? 4 : 2
                     )) return 0;
                 } else if (!outbuf_append(ob, "\n  ", 3)) {
                     return 0;

@@ -90,6 +90,24 @@ class _BlockquoteString(str):
     _jmd_blockquote = True
 
 
+
+def _is_blockquote_string(value: object) -> bool:
+    """Select blockquotes only when their normalization preserves the value.
+
+    Explicit render paths request a representation, not a lossy conversion.
+    Significant boundary whitespace, CR characters, and whitespace before
+    line breaks therefore use the existing quoted scalar form instead.
+    """
+    if not isinstance(value, str):
+        return False
+    if "\n" not in value and not isinstance(value, _BlockquoteString):
+        return False
+    if not value or value[0].isspace() or value[-1].isspace():
+        return False
+    if "\r" in value:
+        return False
+    return all(not part or not part[-1].isspace() for part in value.split("\n"))
+
 PathSegment = tuple[str, bool]
 BlockquotePath = tuple[str, ...]
 
@@ -302,9 +320,7 @@ class JMDSerializer:
                     lines.append("")
                     lines.append(f"{self._heading(depth + 1)}{k}[]")
                     self._write_array_items(value, lines, depth + 1)
-                elif isinstance(value, str) and (
-                    "\n" in value or isinstance(value, _BlockquoteString)
-                ):
+                elif isinstance(value, str) and _is_blockquote_string(value):
                     lines.append(f"{k}:")
                     self._write_multiline(value, lines)
                 else:
@@ -344,9 +360,7 @@ class JMDSerializer:
                     first = True
                     for k, v in scalar_fields.items():
                         qk = quote_key(k)
-                        is_blockquote = isinstance(v, _BlockquoteString) or (
-                            isinstance(v, str) and "\n" in v
-                        )
+                        is_blockquote = _is_blockquote_string(v)
                         if is_blockquote:
                             if first:
                                 lines.append("-")
@@ -407,10 +421,7 @@ class JMDSerializer:
                         first = True
                         for k, v in het_scalar_fields.items():
                             qk = quote_key(k)
-                            is_blockquote = (
-                                isinstance(v, _BlockquoteString)
-                                or (isinstance(v, str) and "\n" in v)
-                            )
+                            is_blockquote = _is_blockquote_string(v)
                             if is_blockquote:
                                 if first:
                                     lines.append(f"{pfx}-")
