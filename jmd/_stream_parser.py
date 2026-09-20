@@ -13,6 +13,7 @@ from ._parser_common import (
     _K_SCALAR_HEADING,
     JMDParseError,
 )
+from ._parser_header import check_frontmatter_key
 from ._scalars import parse_key, parse_scalar
 from ._stream_events import StreamEvent
 from ._stream_state import (
@@ -218,6 +219,7 @@ class JMDStreamParser:
         if field_parts is not None:
             key_raw, value_raw = field_parts
             key = parse_key(key_raw)
+            check_frontmatter_key(self._frontmatter, key, line.number)
             if value_raw == "":
                 self._blockquote = Blockquote(key, frontmatter=True)
             else:
@@ -228,7 +230,9 @@ class JMDStreamParser:
             and not line.content.startswith(">")
             and not line.content.startswith("- ")
         ):
-            self._frontmatter[parse_key(line.content)] = True
+            key = parse_key(line.content)
+            check_frontmatter_key(self._frontmatter, key, line.number)
+            self._frontmatter[key] = True
 
     def _start_document(
         self,

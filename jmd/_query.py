@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
+from ._parser_header import _parse_frontmatter, normalize_document_source
 from ._scalars import parse_key, parse_scalar
 from ._tokenizer import Line, tokenize
 
@@ -172,27 +173,13 @@ class JMDQueryParser:
 
     def parse(self, source: str) -> JMDQuery:
         """Parse a JMD query document."""
-        self._lines = tokenize(source)
-        self._pos = 0
+        self._lines = tokenize(normalize_document_source(source))
         self.frontmatter: dict[str, Any] = {}
 
         if not self._lines:
             raise ValueError("Empty query document")
 
-        # Skip frontmatter (key: value lines before the first heading)
-        while self._pos < len(self._lines):
-            line = self._lines[self._pos]
-            if line.heading_depth > 0:
-                break
-            if line.heading_depth == -1:
-                self._pos += 1
-                continue
-            if ": " in line.content:
-                key_part, _, val_part = line.content.partition(": ")
-                self.frontmatter[parse_key(key_part)] = parse_scalar(val_part)
-            elif line.content and not line.content.startswith(("- ", ">")):
-                self.frontmatter[parse_key(line.content)] = True
-            self._pos += 1
+        self.frontmatter, self._pos = _parse_frontmatter(self._lines)
 
         if self._pos >= len(self._lines):
             raise ValueError("No root heading found in query document")

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -202,6 +203,16 @@ def _validate_single_document(lines: list[Line], root_pos: int) -> None:
         )
 
 
+def check_frontmatter_key(
+    frontmatter: Mapping[str, object], key: str, line: int,
+) -> None:
+    """Reject a second declaration of a decoded key in the metadata scope."""
+    if key in frontmatter:
+        raise JMDParseError(
+            kind="repeated_scalar_key", line=line, key=key,
+        )
+
+
 def _parse_frontmatter(lines: list[Line]) -> tuple[dict[str, Any], int]:
     """Parse fields before the first heading and return the root position."""
     frontmatter: dict[str, Any] = {}
@@ -213,13 +224,17 @@ def _parse_frontmatter(lines: list[Line]) -> tuple[dict[str, Any], int]:
         if line.heading_depth == -1 or is_thematic_break(line):
             pos += 1
             continue
-        if ": " in line.content:
-            key_part, val_part = split_kv(line.content) or (line.content, "")
-            frontmatter[parse_key(key_part)] = parse_scalar(val_part)
+        pair = split_kv(line.content)
+        if pair is not None:
+            key_part, val_part = pair
+            key = parse_key(key_part)
+            check_frontmatter_key(frontmatter, key, line.number)
+            frontmatter[key] = parse_scalar(val_part)
             pos += 1
             continue
-        if line.content.endswith(":") and ": " not in line.content:
+        if line.content.endswith(":"):
             key = parse_key(line.content[:-1])
+            check_frontmatter_key(frontmatter, key, line.number)
             pos += 1
             if _starts_blockquote(lines, pos):
                 frontmatter[key], pos = parse_blockquote_from(lines, pos)
@@ -231,7 +246,9 @@ def _parse_frontmatter(lines: list[Line]) -> tuple[dict[str, Any], int]:
             and not line.content.startswith(">")
             and not line.content.startswith("- ")
         ):
-            frontmatter[parse_key(line.content)] = True
+            key = parse_key(line.content)
+            check_frontmatter_key(frontmatter, key, line.number)
+            frontmatter[key] = True
             pos += 1
             continue
         break

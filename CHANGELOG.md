@@ -4,6 +4,25 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.10.4] — 2026-09-20
+
+### Fixed
+
+- All parser entry points reject repeated frontmatter keys with
+  `repeated_scalar_key`, the decoded key and the second declaration's source
+  line. Equal values, JSON-quoted key spellings, bare flags, empty values and
+  blockquotes cannot silently overwrite earlier metadata.
+- Query and schema dialect parsers share the general frontmatter parser,
+  preserving empty and blockquote values and correctly handling quoted keys
+  containing colons. Streaming applies the same duplicate check before
+  emitting the document header.
+- Frontmatter and body remain separate scopes: using a name once in each
+  is valid. Blank lines and decorative delimiters do not reset frontmatter.
+
+Previously accepted duplicate metadata is now rejected as invalid input.
+Applications receive the existing structured parser error; no application-level
+duplicate scanner or new exception category is required.
+
 ## [0.10.3] — 2026-09-18
 
 ### Fixed

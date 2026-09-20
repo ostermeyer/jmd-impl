@@ -9,6 +9,7 @@ from dataclasses import field as dc_field
 from typing import Any
 
 from ._parser_common import _is_indent_field, _is_object_item_content
+from ._parser_header import _parse_frontmatter, normalize_document_source
 from ._scalars import parse_key, parse_scalar, split_kv
 from ._schema_conversion import (
     json_schema_to_jmd_schema as json_schema_to_jmd_schema,
@@ -244,28 +245,13 @@ class JMDSchemaParser:
 
     def parse(self, source: str) -> JMDSchema:
         """Parse a JMD schema document."""
-        self._lines = tokenize(source)
-        self._pos = 0
+        self._lines = tokenize(normalize_document_source(source))
         self.frontmatter: dict[str, Any] = {}
 
         if not self._lines:
             raise ValueError("Empty schema document")
 
-        # Skip frontmatter (key: value lines before the first heading)
-        while self._pos < len(self._lines):
-            line = self._lines[self._pos]
-            if line.heading_depth > 0:
-                break
-            if line.heading_depth == -1:
-                self._pos += 1
-                continue
-            kv = split_kv(line.content) if line.content else None
-            if kv is not None:
-                key_part, val_part = kv
-                self.frontmatter[parse_key(key_part)] = parse_scalar(val_part)
-            elif line.content and not line.content.startswith(("- ", ">")):
-                self.frontmatter[parse_key(line.content)] = True
-            self._pos += 1
+        self.frontmatter, self._pos = _parse_frontmatter(self._lines)
 
         if self._pos >= len(self._lines):
             raise ValueError("No root heading found in schema document")
