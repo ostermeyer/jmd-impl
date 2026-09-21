@@ -148,6 +148,21 @@ as `#/` line and `#*` block markers. The mapping follows the
 [JMD over JSONC companion specification](https://github.com/ostermeyer/jmd-spec/blob/main/jmd-over-jsonc.md),
 which is still a draft.
 
+## Command Line
+
+The package installs a `jmd` command:
+
+```bash
+jmd to-json order.jmd                     # JMD → JSON
+jmd from-json order.json --label Order    # JSON → JMD
+jmd render order.jmd -o order.html        # JMD → HTML
+jmd roundtrip order.jmd                   # check JMD → JSON → JMD is lossless
+cat order.jmd | jmd to-json               # without a file, input comes from stdin
+```
+
+`jmd` without arguments, or with `--help`, prints the usage text and nothing
+else. `python -m jmd` is equivalent.
+
 ## C Extensions
 
 Build manually if needed:

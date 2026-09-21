@@ -5,16 +5,19 @@ Implements JMD Specification v0.3.6 — heading-scope model with blockquotes
 and indentation continuation.
 
 Usage:
-    python -m jmd                          # demo + roundtrip test
-    python -m jmd to-json input.jmd        # pretty-print JSON
-    python -m jmd from-json input.json     # convert JSON to JMD
-    python -m jmd render input.jmd         # render HTML to stdout
-    python -m jmd roundtrip input.jmd      # JMD -> JSON -> JMD, assert lossless
+    jmd to-json input.jmd        # pretty-print JSON
+    jmd from-json input.json     # convert JSON to JMD
+    jmd render input.jmd         # render HTML to stdout
+    jmd roundtrip input.jmd      # JMD -> JSON -> JMD, assert lossless
+    jmd --help                   # usage; also printed without arguments
+
+    Without an input file the commands read stdin. ``python -m jmd``
+    is equivalent to ``jmd``.
 
     As a library:
         from jmd import parse, serialize
-        data = parse(text)
-        jmd  = serialize(data, label="Order")
+        doc = parse(text)            # Envelope: mode, label, frontmatter, value
+        jmd = serialize(doc)
 """
 
 from __future__ import annotations
@@ -23,10 +26,6 @@ from collections.abc import Collection
 from typing import Any
 
 from ._cli import (
-    SAMPLE_JMD,
-    SAMPLE_QUERY,
-    SAMPLE_RECORDS,
-    SAMPLE_SCHEMA,
     dict_to_jmd,
     jmd_parse_schema,
     jmd_query,
@@ -328,9 +327,4 @@ __all__ = [
     "jmd_parse_schema",
     "jmd_schema_to_json_schema",
     "json_schema_to_jmd_schema",
-    # Sample data
-    "SAMPLE_JMD",
-    "SAMPLE_QUERY",
-    "SAMPLE_SCHEMA",
-    "SAMPLE_RECORDS",
 ]

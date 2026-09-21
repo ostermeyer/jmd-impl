@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""JMD CLI commands and sample data."""
+"""JMD command-line interface and top-level convenience functions."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from ._parser import JMDParser
 from ._query import JMDQueryExecutor, JMDQueryParser
 from ._schema import JMDSchemaParser
 from ._serializer import JMDSerializer
-from ._streaming import jmd_stream
 
 # ---------------------------------------------------------------------------
 # Public API — top-level convenience functions
@@ -79,167 +78,50 @@ def json_schema_to_jmd_schema(json_schema_source: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Sample data (v0.2 syntax)
-# ---------------------------------------------------------------------------
-
-SAMPLE_JMD = """\
-# Order
-id: 42
-status: "pending"
-paid: false
-notes: null
-description:
-> Ships within 2 business days
-> from our central warehouse.
->
-> Handle with care.
-
-## address
-street: Hauptstraße 1
-city: Berlin
-zip: "10115"
-### geo
-lat: 52.52
-lng: 13.40
-
-## tags[]
-- express
-- fragile
-
-## items[]
-- sku: A1
-  qty: 2
-  price: 29.99
-- sku: B3
-  qty: 1
-  price: 24.99
-
-## matrix[]
-### []
-- 1
-- 2
-### []
-- 3
-- 4
-
-## total: 84.99
-"""
-
-SAMPLE_QUERY = """\
-#? Order
-status: pending|processing
-total: >50.0
-## tags[]
-- express
-## items[]
-- sku: ?
-  qty: ?
-  price: >10.0
-## address
-city: ?
-?: ?
-"""
-
-SAMPLE_SCHEMA = """\
-#! Order
-id: integer
-status: string(pending|active|shipped|cancelled)
-total: number
-paid: boolean
-notes: string?
-description: string?
-
-## address
-street: string
-city: string
-zip: string
-### geo
-lat: number
-lng: number
-
-## tags[]: string
-
-## items[]: object
-- sku: string
-  qty: integer
-  price: number
-"""
-
-SAMPLE_RECORDS: list[dict[str, Any]] = [
-    {
-        "id": 1,
-        "status": "pending",
-        "total": 84.99,
-        "tags": ["express", "fragile"],
-        "items": [
-            {"sku": "A1", "qty": 2, "price": 29.99},
-            {"sku": "B3", "qty": 1, "price": 8.00},
-        ],
-        "address": {
-            "city": "Berlin",
-            "street": "Hauptstr. 1",
-            "zip": "10115",
-        },
-    },
-    {
-        "id": 2,
-        "status": "shipped",
-        "total": 120.00,
-        "tags": ["express"],
-        "items": [{"sku": "C2", "qty": 1, "price": 120.00}],
-        "address": {
-            "city": "Hamburg",
-            "street": "Allee 5",
-            "zip": "20095",
-        },
-    },
-    {
-        "id": 3,
-        "status": "processing",
-        "total": 35.00,
-        "tags": ["express"],
-        "items": [{"sku": "D4", "qty": 3, "price": 11.66}],
-        "address": {
-            "city": "München",
-            "street": "Marienplatz 1",
-            "zip": "80331",
-        },
-    },
-    {
-        "id": 4,
-        "status": "pending",
-        "total": 200.00,
-        "tags": ["standard"],
-        "items": [{"sku": "E5", "qty": 1, "price": 200.00}],
-        "address": {
-            "city": "Berlin",
-            "street": "Unter den Linden 1",
-            "zip": "10117",
-        },
-    },
-    {
-        "id": 5,
-        "status": "pending",
-        "total": 67.50,
-        "tags": ["express"],
-        "items": [{"sku": "F6", "qty": 2, "price": 33.75}],
-        "address": {
-            "city": "Köln",
-            "street": "Dom 1",
-            "zip": "50667",
-        },
-    },
-]
-
-
-# ---------------------------------------------------------------------------
 # CLI commands
 # ---------------------------------------------------------------------------
 
+# Exit status for invocation errors (unknown command, no input), kept
+# apart from 1, which reports a failed roundtrip.
+_EXIT_USAGE = 2
 
-def _read_file(path: str) -> str:
-    with open(path, encoding="utf-8") as fh:
-        return fh.read()
+_USAGE = """\
+jmd - convert and check JMD (JSON Markdown) documents
+
+Usage:
+  jmd to-json   [input.jmd]  [-o output.json] [--indent N]
+  jmd from-json [input.json] [-o output.jmd]  [--label Label]
+  jmd render    [input.jmd]  [-o output.html]
+  jmd roundtrip [input.jmd]
+  jmd --help
+
+Without an input file, or with "-", the input is read from stdin.
+
+Specification: https://github.com/ostermeyer/jmd-spec
+Library:       https://github.com/ostermeyer/jmd-impl
+"""
+
+
+class _NoInputError(Exception):
+    """Raised when a command has neither an input file nor piped stdin."""
+
+
+def _read_input(path: str | None) -> str:
+    """Return the command input from *path*, or from stdin.
+
+    Stdin is read only when it is not an interactive terminal: a
+    forgotten file argument must fail fast instead of waiting for
+    keyboard input.
+
+    Raises:
+        _NoInputError: No file was named and stdin is a terminal.
+    """
+    if path is not None and path != "-":
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    if sys.stdin is None or sys.stdin.isatty():
+        raise _NoInputError
+    return sys.stdin.read()
 
 
 def _cmd_to_json(source: str, output: str | None, indent: int) -> None:
@@ -272,7 +154,7 @@ def _cmd_render(source: str, output: str | None = None) -> None:
         print(html)
 
 
-def _cmd_roundtrip(source: str) -> None:
+def _cmd_roundtrip(source: str) -> int:
     data1 = JMDParser().parse(source).value
     jmd2 = JMDSerializer().serialize(data1)
     data2 = JMDParser().parse(jmd2).value
@@ -280,52 +162,17 @@ def _cmd_roundtrip(source: str) -> None:
     j2 = json.dumps(data2, sort_keys=True, ensure_ascii=False)
     if j1 == j2:
         print("Roundtrip OK - JSON output identical")
-    else:
-        print("Roundtrip FAILED")
-        diff = difflib.unified_diff(
-            j1.splitlines(),
-            j2.splitlines(),
-            lineterm="",
-            fromfile="pass-1",
-            tofile="pass-2",
-        )
-        print("\n".join(diff))
-        sys.exit(1)
-
-
-def _qbe_demo() -> None:
-    print("Query:\n")
-    print(SAMPLE_QUERY)
-    q = JMDQueryParser().parse(SAMPLE_QUERY)
-    print(f"Parsed: {q}\n")
-    results = jmd_query(SAMPLE_QUERY, SAMPLE_RECORDS)
-    print(f"Matching records: {len(results)}\n")
-    print("Result as JMD:\n")
-    print(dict_to_jmd(results, label="Results"))
-    print("\nResult as JSON:\n")
-    print(json.dumps(results, indent=2, ensure_ascii=False))
-
-
-def _schema_demo() -> None:
-    schema = jmd_parse_schema(SAMPLE_SCHEMA)
-    print(f"Schema: {schema.label}, {len(schema.fields)} top-level fields")
-    json_schema_str = jmd_schema_to_json_schema(SAMPLE_SCHEMA)
-    print("\nJMD Schema -> JSON Schema:\n")
-    print(json_schema_str)
-    jmd_schema_back = json_schema_to_jmd_schema(json_schema_str)
-    print("\nJSON Schema -> JMD Schema (roundtrip):\n")
-    print(jmd_schema_back)
-    json_schema_2 = jmd_schema_to_json_schema(jmd_schema_back)
-    if json.loads(json_schema_str) == json.loads(json_schema_2):
-        print("\nSchema roundtrip OK - JSON Schema output identical")
-    else:
-        print("\nSchema roundtrip FAILED")
-
-
-def _streaming_demo() -> None:
-    print("Stream events from Order document:\n")
-    for event in jmd_stream(SAMPLE_JMD):
-        print(f"  {event}")
+        return 0
+    print("Roundtrip FAILED")
+    diff = difflib.unified_diff(
+        j1.splitlines(),
+        j2.splitlines(),
+        lineterm="",
+        fromfile="pass-1",
+        tofile="pass-2",
+    )
+    print("\n".join(diff))
+    return 1
 
 
 def _flag(args: list[str], name: str, default: str | None = None) -> str | None:
@@ -336,73 +183,53 @@ def _flag(args: list[str], name: str, default: str | None = None) -> str | None:
     return default
 
 
-_USAGE = """\
-JMD - JSON Markdown converter (v0.3.6)
+def main(argv: list[str] | None = None) -> int:
+    """Run the JMD command-line interface.
 
-Usage:
-  python -m jmd to-json   <input.jmd>  [-o output.json] [--indent N]
-  python -m jmd from-json <input.json> [-o output.jmd]  [--label Label]
-  python -m jmd render    <input.jmd>  [-o output.html]
-  python -m jmd roundtrip <input.jmd>
+    Without arguments, and for ``-h``, ``--help`` or ``help``, prints
+    the usage text and does nothing else.
 
-  No arguments: run built-in demo
+    Args:
+        argv: Arguments without the program name; ``sys.argv[1:]`` when
+            omitted.
 
-Library use:
-  from jmd import JMDParser, JMDSerializer, jmd_to_json, json_to_jmd
-"""
-
-
-def main() -> None:
-    """Entry point for the JMD command-line interface."""
-    args = sys.argv[1:]
-    if not args:
-        print("=== JMD v0.3.6 Demo: JMD -> JSON ===\n")
-        print(jmd_to_json(SAMPLE_JMD))
-        print("\n=== JMD v0.3.6 Demo: JSON -> JMD ===\n")
-        print(json_to_jmd(jmd_to_json(SAMPLE_JMD), label="Order"))
-        print("\n=== Roundtrip Test ===")
-        _cmd_roundtrip(SAMPLE_JMD)
-        print("\n=== Schema Demo ===\n")
-        _schema_demo()
-        print("\n=== Streaming Demo ===\n")
-        _streaming_demo()
-        print("\n=== QBE Demo ===\n")
-        _qbe_demo()
-        print("\n=== Rendering HTML ===")
-        _cmd_render(SAMPLE_JMD, "jmd_demo.html")
-        return
+    Returns:
+        The process exit status: 0 on success, 1 for a failed roundtrip,
+        2 for an unknown command or missing input.
+    """
+    args = sys.argv[1:] if argv is None else argv
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(_USAGE, end="")
+        return 0
 
     cmd = args[0]
+    if cmd not in ("to-json", "from-json", "render", "roundtrip"):
+        print(f"Unknown command: {cmd}\n", file=sys.stderr)
+        print(_USAGE, end="", file=sys.stderr)
+        return _EXIT_USAGE
+
     file_path = (
         args[1] if len(args) > 1 and not args[1].startswith("-") else None
     )
     out = _flag(args, "-o")
+    try:
+        source = _read_input(file_path)
+    except _NoInputError:
+        print(
+            f"jmd {cmd}: no input - name a file or pipe the document "
+            "into stdin (see jmd --help)",
+            file=sys.stderr,
+        )
+        return _EXIT_USAGE
 
     if cmd == "to-json":
-        source = _read_file(file_path) if file_path else SAMPLE_JMD
         indent = int(_flag(args, "--indent", "2") or "2")
         _cmd_to_json(source, out, indent)
-
     elif cmd == "from-json":
-        if file_path:
-            source = _read_file(file_path)
-        else:
-            source = json.dumps({"hello": "world"})
         label = _flag(args, "--label", "Document") or "Document"
         _cmd_from_json(source, out, label)
-
     elif cmd == "render":
-        source = _read_file(file_path) if file_path else SAMPLE_JMD
         _cmd_render(source, out)
-
-    elif cmd == "roundtrip":
-        source = _read_file(file_path) if file_path else SAMPLE_JMD
-        _cmd_roundtrip(source)
-
-    elif cmd in ("-h", "--help", "help"):
-        print(_USAGE)
-
     else:
-        print(f"Unknown command: {cmd}\n", file=sys.stderr)
-        print(_USAGE, file=sys.stderr)
-        sys.exit(1)
+        return _cmd_roundtrip(source)
+    return 0

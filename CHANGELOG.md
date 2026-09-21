@@ -20,12 +20,24 @@ releases may carry behavioral (breaking) changes.
 
 ### Removed
 
+- The built-in CLI demo. `jmd` without arguments ran it and wrote
+  `jmd_demo.html` into the current directory unasked; it now prints the
+  usage text and nothing else.
+- The demo's sample data `SAMPLE_JMD`, `SAMPLE_QUERY`, `SAMPLE_SCHEMA` and
+  `SAMPLE_RECORDS` from the public API.
 - Python 3.10 support (end of life October 2026): `requires-python` is now
   `>=3.11`, and no cp310 wheels are built. Installers on 3.10 keep resolving
   to 0.10.4.
 
 ### Changed
 
+- CLI commands without an input file (or with `-`) read stdin, so
+  `cat x.jmd | jmd to-json` works. Previously they silently converted the
+  built-in sample document. On an interactive terminal they fail fast with
+  a message instead of waiting for input.
+- CLI invocation errors (unknown command, no input) exit with status 2
+  instead of 1; 1 remains a failed `roundtrip`. The usage text shows the
+  installed `jmd` command and points to the specification.
 - Wheels are built with cibuildwheel 4.x. Linux wheels target
   `manylinux_2_28` (glibc 2.28 or later) instead of `manylinux2014`; older
   systems install from the sdist.
@@ -35,8 +47,8 @@ releases may carry behavioral (breaking) changes.
 - The README installs from PyPI, names the supported wheels and the spec
   version (v0.3.6), and its Quick Start shows the `Envelope` that `parse()`
   returns.
-- The `jmd` CLI usage and demo banners and the package docstring name spec
-  v0.3.6 instead of v0.3.5.
+- The package docstring names spec v0.3.6 instead of v0.3.5, and the
+  README documents the `jmd` command.
 
 ## [0.10.4] — 2026-09-20
 
