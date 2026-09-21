@@ -4,7 +4,7 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
-## [0.11.0] — unreleased
+## [0.11.0] — 2026-09-21
 
 ### Added
 
@@ -49,6 +49,12 @@ releases may carry behavioral (breaking) changes.
   returns.
 - The package docstring names spec v0.3.6 instead of v0.3.5, and the
   README documents the `jmd` command.
+
+### Internal
+
+- The release workflow can be started manually to build and test the
+  wheels and the sdist without releasing; the GitHub release and the PyPI
+  upload still run only for a pushed `v*` tag.
 
 ## [0.10.4] — 2026-09-20
 
