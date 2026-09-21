@@ -18,7 +18,8 @@ pip install "jmd-format[xml]"
 ```
 
 PyPI carries pre-built wheels with the C extensions for CPython 3.11–3.14
-on Linux (x86_64, glibc 2.28 or later), macOS (Apple silicon), and Windows.
+on Linux (x86_64, glibc 2.17 or later), macOS (Apple silicon), and Windows
+(32- and 64-bit).
 Everywhere else pip installs from the source distribution: the C extensions
 are compiled when a C compiler is available, and the pure-Python fallback is
 used transparently otherwise.

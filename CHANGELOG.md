@@ -38,9 +38,9 @@ releases may carry behavioral (breaking) changes.
 - CLI invocation errors (unknown command, no input) exit with status 2
   instead of 1; 1 remains a failed `roundtrip`. The usage text shows the
   installed `jmd` command and points to the specification.
-- Wheels are built with cibuildwheel 4.x. Linux wheels target
-  `manylinux_2_28` (glibc 2.28 or later) instead of `manylinux2014`; older
-  systems install from the sdist.
+- Wheels are built with cibuildwheel 4.x in the `manylinux_2_28` image.
+  auditwheel still tags the Linux wheels `manylinux2014` / `manylinux_2_17`
+  as well, so they keep installing on glibc 2.17 and later.
 
 ### Documentation
 
