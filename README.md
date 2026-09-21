@@ -1,37 +1,34 @@
 # jmd-format — Python Reference Implementation
 
-Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.3.5). Includes a C-accelerated parser and serializer, plus lossless XML↔JMD conversion.
+Python reference implementation of the [JMD specification](https://github.com/ostermeyer/jmd-spec) (v0.3.6). Includes a C-accelerated parser and serializer, plus lossless XML↔JMD and JSONC↔JMD conversion. Requires Python 3.11 or later.
 
 ## Installation
 
-Install the latest version directly from GitHub:
+Install from [PyPI](https://pypi.org/project/jmd-format/):
 
 ```bash
-pip install git+https://github.com/ostermeyer/jmd-impl.git
+pip install jmd-format
 ```
 
-Or pin a specific release:
+Pin a release, or add the optional XML support (`lxml`):
 
 ```bash
-pip install git+https://github.com/ostermeyer/jmd-impl.git@v0.9.1
+pip install "jmd-format==0.11.0"
+pip install "jmd-format[xml]"
 ```
 
-Pre-built wheels for Linux, macOS, and Windows are attached to each
-[GitHub Release](https://github.com/ostermeyer/jmd-impl/releases) and can be
-installed directly:
-
-```bash
-pip install https://github.com/ostermeyer/jmd-impl/releases/download/v0.9.1/jmd_format-0.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-```
-
-The C extensions are built automatically during installation if a C compiler is available. If not, the pure-Python fallback is used transparently.
+PyPI carries pre-built wheels with the C extensions for CPython 3.11–3.14
+on Linux (x86_64, glibc 2.28 or later), macOS (Apple silicon), and Windows.
+Everywhere else pip installs from the source distribution: the C extensions
+are compiled when a C compiler is available, and the pure-Python fallback is
+used transparently otherwise.
 
 ## Quick Start
 
 ```python
 from jmd import parse, serialize
 
-data = parse("""
+doc = parse("""
 # Order
 id: 42
 status: pending
@@ -41,11 +38,17 @@ name: Anna Müller
 email: anna@example.com
 """)
 
-print(data)
+print(doc.mode, doc.label)
+# data Order
+print(doc.value)
 # {'id': 42, 'status': 'pending', 'customer': {'name': 'Anna Müller', 'email': 'anna@example.com'}}
 
-print(serialize(data, label="Order"))
+print(serialize(doc))                       # label and frontmatter from the envelope
+print(serialize(doc.value, label="Order"))  # or from a plain value
 ```
+
+`parse()` returns an `Envelope` carrying `mode`, `label`, `frontmatter`, and
+the parsed body in `value`.
 
 ## Document Modes
 
@@ -126,6 +129,24 @@ SOAP, XBRL, XRechnung, and similar formats. Mixed-content XML (ODF, XHTML)
 is out of scope.
 
 See the [JMD over XML companion specification](https://github.com/ostermeyer/jmd-spec/blob/main/jmd-over-xml.md) for the full mapping rules.
+
+## JSONC Mapping
+
+Lossless round-trip between JSONC (JSON with comments and trailing commas)
+and JMD, standard library only:
+
+```python
+from jmd.jsonc import from_jmd, parse_jsonc, serialize_jsonc, to_jmd
+
+doc = parse_jsonc(jsonc_source, root_label="Settings")  # JSONC → AST
+jmd_source = to_jmd(doc)                                  # AST → JMD
+jsonc_output = serialize_jsonc(from_jmd(jmd_source))      # JMD → JSONC
+```
+
+Comments survive at their original positions: the JMD form carries them
+as `#/` line and `#*` block markers. The mapping follows the
+[JMD over JSONC companion specification](https://github.com/ostermeyer/jmd-spec/blob/main/jmd-over-jsonc.md),
+which is still a draft.
 
 ## C Extensions
 

@@ -4,6 +4,40 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.11.0] — unreleased
+
+### Added
+
+- `jmd.jsonc` — lossless JSONC ↔ JMD conversion per the draft companion
+  specification `jmd-over-jsonc.md`: `parse_jsonc`, `serialize_jsonc`,
+  `to_jmd`, `from_jmd` and the `JsoncDoc` AST. Comments keep their
+  positions via the `#/` and `#*` markers. Standard library only, no extra
+  required. Migrated from `jmd-sublime`, which previously held the only
+  implementation; the JMD-side error class is now `JsoncJmdParseError`,
+  so it cannot be confused with `jmd.JMDParseError`.
+- Python 3.14 support, including pre-built cp314 wheels. This covers the
+  embedded Python of Sublime Text 4213 and later.
+
+### Removed
+
+- Python 3.10 support (end of life October 2026): `requires-python` is now
+  `>=3.11`, and no cp310 wheels are built. Installers on 3.10 keep resolving
+  to 0.10.4.
+
+### Changed
+
+- Wheels are built with cibuildwheel 4.x. Linux wheels target
+  `manylinux_2_28` (glibc 2.28 or later) instead of `manylinux2014`; older
+  systems install from the sdist.
+
+### Documentation
+
+- The README installs from PyPI, names the supported wheels and the spec
+  version (v0.3.6), and its Quick Start shows the `Envelope` that `parse()`
+  returns.
+- The `jmd` CLI usage and demo banners and the package docstring name spec
+  v0.3.6 instead of v0.3.5.
+
 ## [0.10.4] — 2026-09-20
 
 ### Fixed
