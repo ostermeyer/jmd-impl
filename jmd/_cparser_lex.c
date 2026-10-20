@@ -14,13 +14,20 @@
 /* Dynamic array of lines                                              */
 /* ------------------------------------------------------------------ */
 
+/* Initialize caller-owned state; own the vector, borrow each line's text.
+ * Return 1 on success, 0 with MemoryError and a freeable empty state. */
 int
 linearray_init(LineArray *la)
 {
     la->cap = 256;
     la->len = 0;
     la->items = (JMDLine *)PyMem_Malloc(la->cap * sizeof(JMDLine));
-    return la->items != NULL;
+    if (!la->items) {
+        la->cap = 0;
+        PyErr_NoMemory();
+        return 0;
+    }
+    return 1;
 }
 
 void
@@ -31,13 +38,21 @@ linearray_free(LineArray *la)
     la->len = la->cap = 0;
 }
 
+/* Copy a borrowed line view into the owned vector. Return 1 on success;
+ * failure sets MemoryError and leaves all vector state and contents intact. */
 static int
 linearray_push(LineArray *la, const JMDLine *line)
 {
     if (la->len == la->cap) {
-        Py_ssize_t newcap = la->cap * 2;
-        JMDLine *tmp = (JMDLine *)PyMem_Realloc(la->items,
-                                                  newcap * sizeof(JMDLine));
+        /* Bound both doubling and the byte multiplication before either. */
+        const Py_ssize_t maxcap = PY_SSIZE_T_MAX / sizeof(JMDLine);
+        if (la->cap >= maxcap) {
+            PyErr_NoMemory();
+            return 0;
+        }
+        Py_ssize_t newcap = la->cap > maxcap / 2 ? maxcap : la->cap * 2;
+        JMDLine *tmp = (JMDLine *)PyMem_Realloc(
+            la->items, (size_t)newcap * sizeof(JMDLine));
         if (!tmp) {
             PyErr_NoMemory();
             return 0;
@@ -261,6 +276,36 @@ parse_quoted_string(const char *s, Py_ssize_t len)
     return result;
 }
 
+/*
+ * Make a NUL-terminated copy of a borrowed numeric slice. Use the caller's
+ * scratch buffer when it fits; otherwise return owned PyMem storage, which the
+ * caller must free. Return NULL with MemoryError on size/allocation failure.
+ * Scratch capacity is only a performance choice, never an input-length limit.
+ */
+static char *
+copy_numeric_text(const char *raw, Py_ssize_t len,
+                  char *scratch, Py_ssize_t scratch_size)
+{
+    char *buf = scratch;
+    if (len >= scratch_size) {
+        if (len == PY_SSIZE_T_MAX) {
+            PyErr_NoMemory();
+            return NULL;
+        }
+        buf = (char *)PyMem_Malloc((size_t)len + 1);
+        if (!buf) {
+            PyErr_NoMemory();
+            return NULL;
+        }
+    }
+    memcpy(buf, raw, (size_t)len);
+    buf[len] = '\0';
+    return buf;
+}
+
+/* Parse a borrowed byte slice under §5 scalar disambiguation. Return a new
+ * value reference, or NULL with an exception. Only invalid numeric text falls
+ * back to a string; resource/conversion failures retain their exceptions. */
 PyObject *
 parse_scalar(const char *raw, Py_ssize_t len)
 {
@@ -307,51 +352,58 @@ parse_scalar(const char *raw, Py_ssize_t len)
                      || memchr(raw, 'E', (size_t)len) != NULL);
 
         if (is_float) {
-            /* Parse as float */
-            char buf[128];
-            if (len < (Py_ssize_t)sizeof(buf)) {
-                memcpy(buf, raw, (size_t)len);
-                buf[len] = '\0';
-                char *end;
-                double val = strtod(buf, &end);
-                if (end == buf + len) {
-                    return PyFloat_FromDouble(val);
-                }
-            }
-            /* Fall through to bare string */
+            char scratch[128];
+            char *buf = copy_numeric_text(raw, len, scratch, sizeof(scratch));
+            char *end;
+            PyObject *result = NULL;
+            if (!buf)
+                return NULL;
+            double val = strtod(buf, &end);
+            int complete = end == buf + len;
+            if (complete)
+                result = PyFloat_FromDouble(val);
+            if (buf != scratch)
+                PyMem_Free(buf);
+            /* Conversion/allocation failure is never a string fallback. */
+            if (complete)
+                return result;
         } else {
-            /* Parse as int using strtol — avoid PyLong_FromString overhead */
-            char buf[32];
-            if (len < (Py_ssize_t)sizeof(buf)) {
-                memcpy(buf, raw, (size_t)len);
-                buf[len] = '\0';
-                char *end;
-                errno = 0;
-                long val = strtol(buf, &end, 10);
-                if (end == buf + len && errno == 0
-                    && val >= LONG_MIN && val <= LONG_MAX)
-                {
-                    return PyLong_FromLong(val);
-                }
-                /* Overflow or parse error: try PyLong for big ints */
-                if (end == buf + len) {
-                    PyObject *result = PyLong_FromString(buf, NULL, 10);
-                    if (result) return result;
-                    PyErr_Clear();
-                }
-            } else {
-                /* Very long number — use PyLong_FromString */
-                char *tmp = (char *)PyMem_Malloc((size_t)(len + 1));
-                if (tmp) {
-                    memcpy(tmp, raw, (size_t)len);
-                    tmp[len] = '\0';
-                    PyObject *result = PyLong_FromString(tmp, NULL, 10);
-                    PyMem_Free(tmp);
-                    if (result) return result;
+            char scratch[32];
+            char *buf = copy_numeric_text(raw, len, scratch, sizeof(scratch));
+            char *end;
+            PyObject *result = NULL;
+            if (!buf)
+                return NULL;
+            errno = 0;
+            long val = strtol(buf, &end, 10);
+            int complete = end == buf + len;
+            if (complete && errno == 0) {
+                result = PyLong_FromLong(val);
+                if (buf != scratch)
+                    PyMem_Free(buf);
+                return result;
+            }
+            /* Retain the established big-integer fallback, but check full
+             * consumption even with embedded NULs in the borrowed source. */
+            if (complete || len >= (Py_ssize_t)sizeof(scratch)) {
+                result = PyLong_FromString(buf, &end, 10);
+                if (result && end != buf + len)
+                    Py_CLEAR(result);
+                else if (!result) {
+                    /* Only invalid text permits the bare-string fallback.
+                     * MemoryError and other failures must reach the caller. */
+                    if (!PyErr_ExceptionMatches(PyExc_ValueError)) {
+                        if (buf != scratch)
+                            PyMem_Free(buf);
+                        return NULL;
+                    }
                     PyErr_Clear();
                 }
             }
-            /* Fall through to bare string */
+            if (buf != scratch)
+                PyMem_Free(buf);
+            if (result)
+                return result;
         }
     }
 

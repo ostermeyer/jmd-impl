@@ -11,122 +11,180 @@
 #include "_cparser_internal.h"
 
 /* ------------------------------------------------------------------ */
-/* Blockquote parser                                                   */
+/* Shared scratch storage for multiline values (§5.2 / §9.1).          */
+/* Ported from the Python parser's unbounded list of text parts.        */
 /* ------------------------------------------------------------------ */
 
+/* Parts borrow source bytes; the vector owns only its allocation. */
+typedef struct {
+    const char *text;
+    Py_ssize_t len;
+} TextPart;
+
+typedef struct {
+    TextPart *items;
+    Py_ssize_t len;
+    Py_ssize_t cap;
+    Py_ssize_t output_bound;
+} TextParts;
+
+/*
+ * Append a borrowed slice to an owned scratch vector. The source must outlive
+ * rendering. Return 1 on success, 0 with MemoryError on allocation/size failure.
+ * Commit neither the slice nor its size until growth succeeds; callers advance
+ * their input cursor only after this function succeeds.
+ */
+static int
+text_parts_append(TextParts *parts, const char *text, Py_ssize_t len)
+{
+    /* Every part needs at most one separator byte in either rendering mode. */
+    if (len >= PY_SSIZE_T_MAX - parts->output_bound) {
+        PyErr_NoMemory();
+        return 0;
+    }
+    if (parts->len == parts->cap) {
+        const Py_ssize_t maxcap = PY_SSIZE_T_MAX / sizeof(TextPart);
+        Py_ssize_t newcap;
+        TextPart *items;
+
+        if (parts->cap == maxcap) {
+            PyErr_NoMemory();
+            return 0;
+        }
+        newcap = parts->cap == 0 ? 32 :
+                 parts->cap > maxcap / 2 ? maxcap : parts->cap * 2;
+        items = (TextPart *)PyMem_Realloc(
+            parts->items, (size_t)newcap * sizeof(TextPart));
+        if (!items) {
+            PyErr_NoMemory();
+            return 0;
+        }
+        parts->items = items;
+        parts->cap = newcap;
+    }
+    parts->items[parts->len].text = text;
+    parts->items[parts->len].len = len;
+    parts->len++;
+    parts->output_bound += len + 1;
+    return 1;
+}
+
+/*
+ * Render borrowed parts as a new Unicode reference, or NULL with an exception.
+ * The vector and its source remain caller-owned. Only trailing empty parts are
+ * removed: leading empty parts encode leading newlines (D13). Folded mode joins
+ * consecutive nonempty lines with spaces and emits one newline per empty part.
+ * Both modes fit the checked sum of (part length + one separator).
+ */
+static PyObject *
+text_parts_render(const TextParts *parts, int folded)
+{
+    Py_ssize_t end = parts->len;
+    Py_ssize_t off = 0;
+    int para_open = 0;
+    char *buf;
+    PyObject *result;
+
+    while (end > 0 && parts->items[end - 1].len == 0)
+        end--;
+    if (end == 0)
+        return PyUnicode_FromStringAndSize("", 0);
+
+    buf = (char *)PyMem_Malloc((size_t)parts->output_bound);
+    if (!buf)
+        return PyErr_NoMemory();
+    for (Py_ssize_t i = 0; i < end; i++) {
+        const TextPart *part = &parts->items[i];
+
+        if (folded && part->len == 0) {
+            para_open = 0;
+            buf[off++] = '\n';
+            continue;
+        }
+        if (folded ? para_open : i > 0)
+            buf[off++] = folded ? ' ' : '\n';
+        if (part->len > 0) {
+            memcpy(buf + off, part->text, (size_t)part->len);
+            off += part->len;
+        }
+        para_open = 1;
+    }
+    result = PyUnicode_FromStringAndSize(buf, off);
+    PyMem_Free(buf);
+    return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* Blockquote parser (§9.1).                                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Consume consecutive blockquote lines from the borrowed state. Return a new
+ * Unicode reference or NULL with an exception. Scratch storage is released on
+ * every exit, including append/render failure; no partial value is returned.
+ */
 PyObject *
 parse_blockquote(ParserState *st)
 {
-    /* Collect raw C strings, then build a single joined result.
-       Avoid PyList + join + strip overhead from the previous version. */
-    const char *parts[256];
-    Py_ssize_t  part_lens[256];
-    Py_ssize_t  nparts = 0;
-    Py_ssize_t  total_len = 0;
+    TextParts parts = {0};
+    PyObject *result = NULL;
 
     while (st->pos < st->lines->len) {
         JMDLine *line = &st->lines->items[st->pos];
         if (line->heading_depth != 0)
             break;
 
-        /* Strip whitespace from raw */
+        /* Preserve the parser's established whitespace normalization. */
         const char *raw = line->raw;
         Py_ssize_t raw_len = line->raw_len;
         while (raw_len > 0 && (*raw == ' ' || *raw == '\t')) {
             raw++;
             raw_len--;
         }
-        while (raw_len > 0 && (raw[raw_len - 1] == ' ' || raw[raw_len - 1] == '\t'))
+        while (raw_len > 0 &&
+               (raw[raw_len - 1] == ' ' || raw[raw_len - 1] == '\t'))
             raw_len--;
 
         if (raw_len == 1 && raw[0] == '>') {
-            /* Paragraph break → empty string part */
-            if (nparts < 256) {
-                parts[nparts] = "";
-                part_lens[nparts] = 0;
-                nparts++;
-            }
-            st->pos++;
+            if (!text_parts_append(&parts, "", 0))
+                goto done;
         } else if (raw_len >= 2 && raw[0] == '>' && raw[1] == ' ') {
-            if (nparts < 256) {
-                parts[nparts] = raw + 2;
-                part_lens[nparts] = raw_len - 2;
-                total_len += raw_len - 2;
-                nparts++;
-            }
-            st->pos++;
+            if (!text_parts_append(&parts, raw + 2, raw_len - 2))
+                goto done;
         } else {
             break;
         }
+        st->pos++;
     }
+    result = text_parts_render(&parts, 0);
 
-    if (nparts == 0) {
-        return PyUnicode_FromStringAndSize("", 0);
-    }
-
-    /* D13: only trim trailing empty parts (rstrip "\n"). Leading empty
-       parts are part of the value — they encode a leading newline, which
-       must round-trip losslessly. */
-    Py_ssize_t start = 0, end = nparts;
-    while (end > start && part_lens[end - 1] == 0) end--;
-
-    if (start >= end) {
-        return PyUnicode_FromStringAndSize("", 0);
-    }
-
-    /* Calculate total output size (parts + newlines between) */
-    total_len = 0;
-    for (Py_ssize_t i = start; i < end; i++) {
-        total_len += part_lens[i];
-        if (i < end - 1) total_len++;  /* newline separator */
-    }
-
-    /* Build result string directly */
-    char *buf = (char *)PyMem_Malloc((size_t)total_len);
-    if (!buf) { PyErr_NoMemory(); return NULL; }
-
-    Py_ssize_t off = 0;
-    for (Py_ssize_t i = start; i < end; i++) {
-        if (part_lens[i] > 0) {
-            memcpy(buf + off, parts[i], (size_t)part_lens[i]);
-            off += part_lens[i];
-        }
-        if (i < end - 1) {
-            buf[off++] = '\n';
-        }
-    }
-
-    PyObject *result = PyUnicode_FromStringAndSize(buf, total_len);
-    PyMem_Free(buf);
+done:
+    PyMem_Free(parts.items);
     return result;
 }
 
 /* ------------------------------------------------------------------ */
-/* YAML-style block scalar (§5.2): ``key: |`` (literal) and             */
-/* ``key: >`` (folded). Mirrors the pure-Python parse_block_scalar_from */
-/* in jmd/_parser.py — parser-tolerant alternative to the blockquote    */
-/* form. Consumes consecutive lines indented by ≥2 spaces from the      */
-/* current position; the first indented line's width sets the strip.    */
+/* Tolerated literal/folded block scalars (§5.2).                       */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Consume indented lines from the borrowed state, stripping the first content
+ * line's indentation (at least two spaces). Blank lines remain paragraph parts.
+ * Return a new Unicode reference or NULL with an exception; free scratch
+ * storage on all paths. This mirrors Python's parse_block_scalar_from().
+ */
 PyObject *
 parse_block_scalar(ParserState *st, int folded)
 {
-    /* Collect stripped line parts (-1 sentinel for in-block blank). */
-    const char *parts[256];
-    Py_ssize_t  part_lens[256];
-    Py_ssize_t  nparts = 0;
-    Py_ssize_t  indent_strip = -1;
+    TextParts parts = {0};
+    Py_ssize_t indent_strip = -1;
+    PyObject *result = NULL;
 
     while (st->pos < st->lines->len) {
         JMDLine *line = &st->lines->items[st->pos];
         if (line->heading_depth == -1) {
-            /* Blank line within block: paragraph separator marker. */
-            if (nparts < 256) {
-                parts[nparts] = "";
-                part_lens[nparts] = 0;
-                nparts++;
-            }
+            if (!text_parts_append(&parts, "", 0))
+                goto done;
             st->pos++;
             continue;
         }
@@ -134,7 +192,6 @@ parse_block_scalar(ParserState *st, int folded)
         Py_ssize_t raw_len = line->raw_len;
         if (raw_len == 0 || raw[0] != ' ')
             break;
-        /* Count leading spaces. */
         Py_ssize_t actual_indent = 0;
         while (actual_indent < raw_len && raw[actual_indent] == ' ')
             actual_indent++;
@@ -144,70 +201,15 @@ parse_block_scalar(ParserState *st, int folded)
             indent_strip = actual_indent;
         if (actual_indent < indent_strip)
             break;
-        if (nparts < 256) {
-            parts[nparts] = raw + indent_strip;
-            part_lens[nparts] = raw_len - indent_strip;
-            nparts++;
-        }
+        if (!text_parts_append(&parts, raw + indent_strip,
+                               raw_len - indent_strip))
+            goto done;
         st->pos++;
     }
+    result = text_parts_render(&parts, folded);
 
-    /* Drop trailing blank parts (§5.2 chomp). */
-    while (nparts > 0 && part_lens[nparts - 1] == 0)
-        nparts--;
-
-    if (nparts == 0)
-        return PyUnicode_FromStringAndSize("", 0);
-
-    if (!folded) {
-        /* Literal mode: join with newlines. */
-        Py_ssize_t total = 0;
-        for (Py_ssize_t i = 0; i < nparts; i++) {
-            total += part_lens[i];
-            if (i < nparts - 1) total++;
-        }
-        char *buf = (char *)PyMem_Malloc((size_t)total);
-        if (!buf) { PyErr_NoMemory(); return NULL; }
-        Py_ssize_t off = 0;
-        for (Py_ssize_t i = 0; i < nparts; i++) {
-            if (part_lens[i] > 0) {
-                memcpy(buf + off, parts[i], (size_t)part_lens[i]);
-                off += part_lens[i];
-            }
-            if (i < nparts - 1) buf[off++] = '\n';
-        }
-        PyObject *result = PyUnicode_FromStringAndSize(buf, total);
-        PyMem_Free(buf);
-        return result;
-    }
-
-    /* Folded mode: non-blank consecutive lines folded with spaces;
-       each in-block blank line becomes one '\n'.  Worst-case output
-       size is bounded by sum(part_lens) + nparts (separators). */
-    Py_ssize_t cap = 0;
-    for (Py_ssize_t i = 0; i < nparts; i++)
-        cap += part_lens[i] + 1;
-    char *buf = (char *)PyMem_Malloc((size_t)cap > 0 ? (size_t)cap : 1);
-    if (!buf) { PyErr_NoMemory(); return NULL; }
-    Py_ssize_t off = 0;
-    int para_open = 0;  /* a non-blank line is currently being collected */
-    for (Py_ssize_t i = 0; i < nparts; i++) {
-        if (part_lens[i] == 0) {
-            /* Blank line: close paragraph, emit \n separator. */
-            para_open = 0;
-            buf[off++] = '\n';
-            continue;
-        }
-        if (para_open) {
-            /* Continue paragraph: fold previous line break to a space. */
-            buf[off++] = ' ';
-        }
-        memcpy(buf + off, parts[i], (size_t)part_lens[i]);
-        off += part_lens[i];
-        para_open = 1;
-    }
-    PyObject *result = PyUnicode_FromStringAndSize(buf, off);
-    PyMem_Free(buf);
+done:
+    PyMem_Free(parts.items);
     return result;
 }
 

@@ -50,7 +50,7 @@ int ser_write_array_scalar(OutBuf *output, PyObject *value);
 int ser_is_blockquote_string(
     PyObject *value, const char **text, Py_ssize_t *length);
 int ser_write_multiline(
-    OutBuf *output, const char *text, Py_ssize_t len);
+    OutBuf *output, const char *text, Py_ssize_t len, int item_field);
 
 /* Mutually recursive collection renderers. */
 int ser_write_object_fields(

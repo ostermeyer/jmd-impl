@@ -287,13 +287,13 @@ class JMDSerializer:
     def _heading(self, depth: int) -> str:
         return "#" * depth + " "
 
-    def _write_multiline(self, value: str, lines: list[str]) -> None:
-        """Write a multiline string as blockquote lines."""
+    def _write_multiline(
+        self, value: str, lines: list[str], *, item_field: bool = False,
+    ) -> None:
+        """Write blockquotes with the immediate field scope's indentation."""
+        prefix = "  " if item_field else ""
         for part in value.split("\n"):
-            if part == "":
-                lines.append(">")
-            else:
-                lines.append(f"> {part}")
+            lines.append(f"{prefix}> {part}" if part else f"{prefix}>")
 
     def _write_object_fields(
         self,
@@ -362,10 +362,9 @@ class JMDSerializer:
                         qk = quote_key(k)
                         is_blockquote = _is_blockquote_string(v)
                         if is_blockquote:
-                            if first:
-                                lines.append("-")
-                            lines.append(f"  {qk}:")
-                            self._write_multiline(v, lines)
+                            prefix = "- " if first else "  "
+                            lines.append(f"{prefix}{qk}:")
+                            self._write_multiline(v, lines, item_field=True)
                         elif first:
                             lines.append(
                                 f"- {qk}: {serialize_scalar(v)}"
@@ -423,10 +422,9 @@ class JMDSerializer:
                             qk = quote_key(k)
                             is_blockquote = _is_blockquote_string(v)
                             if is_blockquote:
-                                if first:
-                                    lines.append(f"{pfx}-")
-                                lines.append(f"  {qk}:")
-                                self._write_multiline(v, lines)
+                                prefix = f"{pfx}- " if first else "  "
+                                lines.append(f"{prefix}{qk}:")
+                                self._write_multiline(v, lines, item_field=True)
                             elif first:
                                 lines.append(
                                     f"{pfx}- {qk}: {serialize_scalar(v)}"

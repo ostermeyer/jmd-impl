@@ -63,7 +63,7 @@ ser_write_object_fields(OutBuf *ob, PyObject *dict, int depth)
                 if (!ser_write_key(ob, kstr, klen)) return 0;
                 if (blockquote) {
                     if (!outbuf_putc(ob, ':')) return 0;
-                    if (!ser_write_multiline(ob, vs, vlen)) return 0;
+                    if (!ser_write_multiline(ob, vs, vlen, 0)) return 0;
                 } else {
                     if (!outbuf_append(ob, ": ", 2)) return 0;
                     if (ser_needs_quote(vs, vlen)) {

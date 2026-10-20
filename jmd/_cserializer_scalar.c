@@ -164,9 +164,24 @@ ser_write_quoted(OutBuf *ob, const char *s, Py_ssize_t len)
     if (!pystr) return 0;
     PyObject *json_mod = PyImport_ImportModule("json");
     if (!json_mod) { Py_DECREF(pystr); return 0; }
-    PyObject *result = PyObject_CallMethod(json_mod, "dumps", "O", pystr);
+    /*
+     * Match Python quote_key/serialize_scalar: retain Unicode in JMD text.
+     * json.dumps defaults to ASCII escaping, which made the C backend emit
+     * different keys and quoted values. All temporary references are owned
+     * here; the output buffer only receives copied UTF-8 bytes below.
+     */
+    PyObject *dumps = PyObject_GetAttrString(json_mod, "dumps");
     Py_DECREF(json_mod);
+    if (!dumps) { Py_DECREF(pystr); return 0; }
+    PyObject *args = PyTuple_Pack(1, pystr);
     Py_DECREF(pystr);
+    if (!args) { Py_DECREF(dumps); return 0; }
+    PyObject *kwargs = Py_BuildValue("{s:O}", "ensure_ascii", Py_False);
+    if (!kwargs) { Py_DECREF(args); Py_DECREF(dumps); return 0; }
+    PyObject *result = PyObject_Call(dumps, args, kwargs);
+    Py_DECREF(kwargs);
+    Py_DECREF(args);
+    Py_DECREF(dumps);
     if (!result) return 0;
     Py_ssize_t rlen;
     const char *rstr = PyUnicode_AsUTF8AndSize(result, &rlen);
@@ -304,14 +319,23 @@ ser_write_array_scalar(OutBuf *ob, PyObject *value)
 /* Multiline strings -> blockquote                                     */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Append a lossless blockquote value (spec 9.1).
+ *
+ * The caller owns s and ob; this function copies borrowed UTF-8 bytes into ob.
+ * item_field selects two-space indentation for a direct array-item field;
+ * ordinary object fields, including headed children, use column zero.
+ * Return 1 on success, 0 with a Python exception on allocation failure.
+ */
 int
-ser_write_multiline(OutBuf *ob, const char *s, Py_ssize_t len)
+ser_write_multiline(OutBuf *ob, const char *s, Py_ssize_t len, int item_field)
 {
     const char *end = s + len;
     while (s < end) {
         const char *nl = (const char *)memchr(s, '\n', (size_t)(end - s));
         Py_ssize_t line_len = nl ? (nl - s) : (end - s);
         if (!outbuf_putc(ob, '\n')) return 0;
+        if (item_field && !outbuf_append(ob, "  ", 2)) return 0;
         if (line_len == 0) {
             if (!outbuf_putc(ob, '>')) return 0;
         } else {

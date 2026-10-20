@@ -4,6 +4,36 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [0.11.1] — 2026-10-20
+
+### Fixed
+
+- C and Python serializers emit canonical array-item blockquotes with two-space
+  indentation and an available first field on the item-marker line, as clarified
+  in spec v0.3.7. Legacy unindented quotes and separate item openers remain
+  accepted by the parsers.
+- The C serializer preserves Unicode in quoted keys and values, matching the
+  Python serializer instead of escaping non-ASCII characters.
+- The C parser no longer truncates blockquotes, literal blocks or folded blocks
+  after 256 lines. Scratch storage grows with checked sizes, and allocation
+  failures propagate without returning partial content.
+- Long decimal and exponent forms retain their numeric type beyond the native
+  stack buffer. Integer conversion preserves allocation failures and unrelated
+  exceptions; embedded NULs cannot silently discard the remainder of a value.
+- Tokenized line-vector growth checks capacity and allocation-size overflow,
+  preserving existing contents when allocation fails.
+
+### Qualification
+
+- Updated the vendored specification and conformance fixtures to v0.3.7
+  (spec commit 329cc40cb64967efcfa21528105dad9decf271ba).
+- Added boundary, Unicode, canonical-layout and native fault-injection tests.
+  Linux/CPython 3.14 qualification passes 2,576 tests; three existing
+  repeated-heading stream-folding cases remain skipped pending specification
+  decisions. Andreas accepted these remaining gaps for this patch.
+- The native fault-injection probes currently use POSIX compiler commands and
+  skip Windows; Windows fault injection has not been qualified.
+
 ## [0.11.0] — 2026-09-21
 
 ### Added
