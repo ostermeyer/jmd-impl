@@ -27,6 +27,7 @@ from ._jsonc_ast import (
     ScalarArray,
     Section,
 )
+from ._tokenizer import split_source_lines
 
 
 class JsoncJmdParseError(ValueError):
@@ -72,7 +73,7 @@ def from_jmd(text: str) -> JsoncDoc:
     outside that subset raises :class:`JsoncJmdParseError` with a
     1-based line number.
     """
-    lines = text.splitlines()
+    lines = split_source_lines(text)
     cur = _LineCursor(lines=lines)
     _skip_blank(cur)
     frontmatter = _parse_jmd_frontmatter(cur)

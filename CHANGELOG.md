@@ -4,6 +4,21 @@ All notable changes to `jmd-format` are documented here. The project
 follows [Semantic Versioning](https://semver.org/); while on `0.x`, minor
 releases may carry behavioral (breaking) changes.
 
+## [Unreleased]
+
+### Fixed
+
+- Split JMD source only at LF/CRLF boundaries. Unicode line separators remain
+  content in quoted strings, keys and blockquotes instead of corrupting values
+  or introducing frontmatter keys. The JSONC companion and error-document
+  detection use the same physical-line rules.
+- Reject a lone CR at end of input in the C parser and embedded CR characters
+  in CRLF-terminated frontmatter on the C fast path, as required by §11.2.
+- Added 143 line-boundary regression cases. The full Linux/CPython 3.14 suite
+  passes 2,719 tests with the same three previously accepted stream-folding
+  skips. SmartSuite integration passes all 5,083 tests with both native and
+  pure-Python backends against a locally built wheel.
+
 ## [0.11.1] — 2026-10-20
 
 ### Fixed

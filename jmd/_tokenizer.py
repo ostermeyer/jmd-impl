@@ -101,6 +101,20 @@ def tokenize_line(number: int, raw: str) -> Line:
     return Line(number, "", -1, "")
 
 
+def split_source_lines(source: str) -> list[str]:
+    """Split LF/CRLF source lines without interpreting Unicode content.
+
+    Unicode separators are string data, not JMD line terminators (§11.2).
+    Preserve an unterminated final line, including any lone CR so the parser
+    can reject it. A terminating LF does not introduce an extra blank line.
+    """
+    parts = source.split("\n")
+    lines = [part.removesuffix("\r") for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
 def tokenize(source: str) -> list[Line]:
     """Tokenize a JMD source string into a list of Line objects.
 
@@ -115,5 +129,5 @@ def tokenize(source: str) -> list[Line]:
     """
     return [
         tokenize_line(i + 1, raw)
-        for i, raw in enumerate(source.splitlines())
+        for i, raw in enumerate(split_source_lines(source))
     ]

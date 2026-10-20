@@ -104,17 +104,17 @@ def _find_root_boundary(source: str) -> tuple[int, int]:
         newline = source.find("\n", line_start)
         line_end = len(source) if newline < 0 else newline
         raw_line = source[line_start:line_end]
-        if raw_line.endswith("\r"):
-            candidate = raw_line[:-1]
-        else:
-            carriage_return = raw_line.find("\r")
-            if carriage_return >= 0:
-                raise JMDParseError(
-                    kind="lone_carriage_return",
-                    line=line_number,
-                    key="",
-                )
-            candidate = raw_line
+        # Only the CR immediately before a physical LF is a terminator.
+        # Check the remainder even when a valid CRLF ended this line.
+        candidate = (
+            raw_line.removesuffix("\r") if newline >= 0 else raw_line
+        )
+        if "\r" in candidate:
+            raise JMDParseError(
+                kind="lone_carriage_return",
+                line=line_number,
+                key="",
+            )
 
         if candidate.lstrip(" \t").startswith("#"):
             return line_start, line_number

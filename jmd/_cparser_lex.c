@@ -136,9 +136,10 @@ tokenize(
          * §11.2. Detect it in the same pass that forms line views so the
          * C fast path does not need a second whole-document scan. */
         Py_ssize_t raw_len = line_len;
-        if (raw_len > 0 && line_start[raw_len - 1] == '\r')
+        if (nl && raw_len > 0 && line_start[raw_len - 1] == '\r')
             raw_len--;
-        if (memchr(line_start, '\r', (size_t)raw_len) != NULL) {
+        if (raw_len > 0 &&
+            memchr(line_start, '\r', (size_t)raw_len) != NULL) {
             raise_structural_parse_error("lone_carriage_return", lineno);
             return 0;
         }

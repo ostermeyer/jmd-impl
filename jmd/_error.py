@@ -8,6 +8,7 @@ from dataclasses import field as dc_field
 from typing import Any
 
 from ._parser import JMDParser
+from ._tokenizer import split_source_lines
 
 _ERROR_LABEL = "Error"
 
@@ -63,7 +64,7 @@ def is_error_document(source: str) -> bool:
     Returns:
         ``True`` if the document starts with ``# Error``.
     """
-    for line in source.splitlines():
+    for line in split_source_lines(source):
         stripped = line.strip()
         if stripped:
             return stripped == "# Error"
